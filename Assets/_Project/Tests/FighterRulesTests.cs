@@ -49,17 +49,25 @@ namespace RollOfLegends.Tests
         }
 
         [Test]
-        public void Respawn_ReturnsHomeWithStartingHp()
+        public void Respawn_StartsOverAndLosesAllBuffsButKeepsTheBase()
         {
             Fighter fighter = NewFighter();
             fighter.Tile = 9;
             fighter.Heal(10);
-            fighter.NextRollBonus = -3;
+            fighter.Attack = 6;
+            fighter.Defense = 2;
+            fighter.NextRollBonus = 2;
+            fighter.LuckyDraw = true;
+            fighter.DamageBase(3);
             fighter.TakeDamage(100);
             fighter.Respawn();
             Assert.AreEqual(0, fighter.Tile);
             Assert.AreEqual(20, fighter.Hp);
+            Assert.AreEqual(2, fighter.Attack);
+            Assert.AreEqual(0, fighter.Defense);
             Assert.AreEqual(0, fighter.NextRollBonus);
+            Assert.IsFalse(fighter.LuckyDraw);
+            Assert.AreEqual(7, fighter.BaseHp, "The base keeps its health");
         }
 
         [Test]
@@ -149,25 +157,52 @@ namespace RollOfLegends.Tests
             Assert.IsFalse(result.RemoveEffect);
         }
 
-        [Test]
-        public void Monster_BeatsWeakFighter()
+        // ---------- Monster fights ----------
+
+        [TestCase(MonsterTier.Small, 5, 5)]
+        [TestCase(MonsterTier.Medium, 3, 4)]
+        [TestCase(MonsterTier.Big, 1, 2)]
+        public void Monster_HasFewerWinningNumbersTheBiggerItIs(MonsterTier tier, int fewest, int most)
         {
-            Fighter fighter = NewFighter(); // attack 2 < monster power 3
-            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Monster);
-            Assert.AreEqual(17, fighter.Hp);
-            Assert.AreEqual(2, fighter.Attack);
-            Assert.IsFalse(result.RemoveEffect);
+            for (int i = 0; i < 100; i++)
+            {
+                Monster monster = Monster.Create(tier);
+                Assert.That(monster.WinningNumbers.Length, Is.InRange(fewest, most));
+                CollectionAssert.AllItemsAreUnique(monster.WinningNumbers);
+                foreach (int number in monster.WinningNumbers) Assert.That(number, Is.InRange(1, 6));
+            }
         }
 
         [Test]
-        public void Monster_IsDefeatedByStrongFighter()
+        public void Fight_RollingAWinningNumberDefeatsTheMonster()
         {
             Fighter fighter = NewFighter();
-            fighter.Attack = 3;
-            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Monster);
-            Assert.AreEqual(20, fighter.Hp);
-            Assert.AreEqual(4, fighter.Attack);
+            EffectResult result = TileRules.FightMonster(fighter, new Monster(MonsterTier.Big, 2, 6), 6);
+            Assert.IsTrue(result.Good);
             Assert.IsTrue(result.RemoveEffect);
+            Assert.AreEqual(4, fighter.Attack, "Big monster: +2 ATK");
+            Assert.AreEqual(23, fighter.Hp, "Big monster: +3 HP");
+        }
+
+        [Test]
+        public void Fight_OtherNumbersLetTheMonsterStrikeBack()
+        {
+            Fighter fighter = NewFighter();
+            fighter.Defense = 1;
+            EffectResult result = TileRules.FightMonster(fighter, new Monster(MonsterTier.Big, 2, 6), 3);
+            Assert.IsFalse(result.Good);
+            Assert.IsFalse(result.RemoveEffect, "The monster stays");
+            Assert.AreEqual(20 - (5 - 1), fighter.Hp, "Big monster hits for 5, minus 1 defense");
+        }
+
+        [Test]
+        public void Fight_SmallMonsterGivesHpAndMediumGivesAttack()
+        {
+            Fighter fighter = NewFighter();
+            TileRules.FightMonster(fighter, new Monster(MonsterTier.Small, 1, 2, 3, 4, 5), 1);
+            Assert.AreEqual(23, fighter.Hp);
+            TileRules.FightMonster(fighter, new Monster(MonsterTier.Medium, 1, 2, 3), 1);
+            Assert.AreEqual(3, fighter.Attack);
         }
 
         [Test]

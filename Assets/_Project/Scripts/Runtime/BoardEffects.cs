@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 using Random = UnityEngine.Random;
 
 namespace RollOfLegends
@@ -21,16 +22,42 @@ namespace RollOfLegends
             public GameObject[] Prefabs;
         }
 
+        [Serializable]
+        public class MonsterKind
+        {
+            public MonsterTier Tier;
+            public GameObject Prefab;
+        }
+
         [SerializeField] private Board _board;
         [SerializeField] private EffectSetup[] _setups = new EffectSetup[0];
 
+        [Tooltip("Monster tiles pick one of these at random; the tier decides how hard the fight is.")]
+        [SerializeField] private MonsterKind[] _monsterKinds = new MonsterKind[0];
+
         private TileEffect[] _effects = new TileEffect[0];
+        private Monster[] _monsters = new Monster[0];
         private GameObject[] _markers = new GameObject[0];
         private readonly HashSet<int> _protectedTiles = new HashSet<int>();
 
         public TileEffect GetEffect(int tile)
         {
             return tile < _effects.Length ? _effects[tile] : TileEffect.None;
+        }
+
+        /// <summary>The monster on a monster tile (null on any other tile).</summary>
+        public Monster GetMonster(int tile)
+        {
+            return tile < _monsters.Length ? _monsters[tile] : null;
+        }
+
+        /// <summary>Puts a specific monster on a tile (handy for testing and debugging).</summary>
+        public void SetMonster(int tile, Monster monster)
+        {
+            SetEffect(tile, TileEffect.None);
+            _effects[tile] = TileEffect.Monster;
+            _monsters[tile] = monster;
+            SpawnMonster(tile, monster);
         }
 
         public int Count(TileEffect effect)
@@ -52,6 +79,7 @@ namespace RollOfLegends
             }
 
             _effects = new TileEffect[_board.TileCount];
+            _monsters = new Monster[_board.TileCount];
             _markers = new GameObject[_board.TileCount];
             _protectedTiles.Clear();
             _protectedTiles.UnionWith(protectedTiles);
@@ -71,6 +99,15 @@ namespace RollOfLegends
             }
 
             _effects[tile] = effect;
+            _monsters[tile] = null;
+            if (effect == TileEffect.Monster && _monsterKinds.Length > 0)
+            {
+                MonsterKind kind = _monsterKinds[Random.Range(0, _monsterKinds.Length)];
+                _monsters[tile] = Monster.Create(kind.Tier);
+                SpawnMonster(tile, _monsters[tile], kind.Prefab);
+                return;
+            }
+
             GameObject prefab = PrefabFor(effect);
             if (prefab != null)
             {
@@ -90,6 +127,67 @@ namespace RollOfLegends
             if (free.Count > 0)
             {
                 SetEffect(free[Random.Range(0, free.Count)], effect);
+            }
+        }
+
+        private void SpawnMonster(int tile, Monster monster, GameObject prefab = null)
+        {
+            if (prefab == null)
+            {
+                foreach (MonsterKind kind in _monsterKinds)
+                {
+                    if (kind.Tier == monster.Tier) prefab = kind.Prefab;
+                }
+            }
+            if (prefab == null) return;
+
+            Transform tileTransform = _board.transform.GetChild(tile);
+            GameObject marker = Instantiate(prefab, tileTransform.position, prefab.transform.rotation, tileTransform);
+            AddNumbersLabel(marker, monster);
+            _markers[tile] = marker;
+        }
+
+        /// <summary>The monster's winning numbers floating above its head, colored by size.</summary>
+        private static void AddNumbersLabel(GameObject marker, Monster monster)
+        {
+            float top = 1.2f;
+            foreach (Renderer part in marker.GetComponentsInChildren<Renderer>())
+            {
+                top = Mathf.Max(top, part.bounds.max.y - marker.transform.position.y);
+            }
+
+            var label = new GameObject("Numbers", typeof(RectTransform), typeof(Canvas), typeof(FaceCamera));
+            label.transform.SetParent(marker.transform, false);
+            label.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+            var rect = (RectTransform)label.transform;
+            rect.position = marker.transform.position + Vector3.up * (top + 0.25f);
+            rect.localScale = Vector3.one * 0.005f / marker.transform.lossyScale.x;
+            rect.sizeDelta = new Vector2(400f, 100f);
+
+            var text = new GameObject("Text", typeof(RectTransform), typeof(Text), typeof(Outline)).GetComponent<Text>();
+            text.transform.SetParent(label.transform, false);
+            var textRect = text.rectTransform;
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = textRect.offsetMax = Vector2.zero;
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = 70;
+            text.fontStyle = FontStyle.Bold;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.text = monster.NumbersText;
+            text.color = TierColor(monster.Tier);
+            text.GetComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
+            text.GetComponent<Outline>().effectDistance = new Vector2(4f, -4f);
+        }
+
+        public static Color TierColor(MonsterTier tier)
+        {
+            switch (tier)
+            {
+                case MonsterTier.Small: return new Color(0.55f, 1f, 0.55f);
+                case MonsterTier.Medium: return new Color(1f, 0.85f, 0.35f);
+                default: return new Color(1f, 0.45f, 0.4f);
             }
         }
 

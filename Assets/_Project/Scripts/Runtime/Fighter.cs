@@ -12,6 +12,7 @@ namespace RollOfLegends
         public readonly string Name;
         public readonly int HomeTile;
         public readonly int StartHp;
+        public readonly int StartAttack;
 
         public int Hp;
         public int Attack;
@@ -32,6 +33,7 @@ namespace RollOfLegends
             Name = name;
             HomeTile = homeTile;
             StartHp = startHp;
+            StartAttack = attack;
             Hp = startHp;
             Attack = attack;
             BaseHp = baseHp;
@@ -79,12 +81,19 @@ namespace RollOfLegends
             return steps;
         }
 
-        /// <summary>Back to the home base with the starting health (after being knocked out).</summary>
+        /// <summary>
+        /// Knocked out: back home, starting over from scratch. All buffs are lost (attack, defense,
+        /// roll bonuses, rare card); only the base keeps its health.
+        /// </summary>
         public void Respawn()
         {
             Hp = StartHp;
-            Tile = HomeTile;
+            Attack = StartAttack;
+            Defense = 0;
             NextRollBonus = 0;
+            SkipTurns = 0;
+            LuckyDraw = false;
+            Tile = HomeTile;
         }
     }
 }
