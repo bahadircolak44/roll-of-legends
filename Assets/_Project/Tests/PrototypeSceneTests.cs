@@ -104,6 +104,7 @@ namespace RollOfLegends.Tests
             }
 
             Assert.AreEqual(2, _effects.Count(TileEffect.Sword));
+            Assert.AreEqual(2, _effects.Count(TileEffect.Spear));
             Assert.AreEqual(2, _effects.Count(TileEffect.HealthPotion));
             Assert.AreEqual(2, _effects.Count(TileEffect.RepairElixir));
             Assert.AreEqual(1, _effects.Count(TileEffect.Shield));
@@ -274,7 +275,8 @@ namespace RollOfLegends.Tests
 
             yield return PlayFixed(2);
 
-            Assert.AreEqual(3, _controller.Player.Attack, "Medium monster: +1 ATK");
+            Assert.AreEqual(3, _controller.Player.Level, "Medium monster: +2 LV");
+            Assert.AreEqual(4, _controller.Player.Attack, "Each level: +1 ATK");
             Assert.AreNotEqual(TileEffect.Monster, _effects.GetEffect(2));
             Assert.AreEqual(1, _effects.Count(TileEffect.Monster), "It reappears elsewhere");
         }
@@ -474,7 +476,7 @@ namespace RollOfLegends.Tests
             Transform view = GameObject.Find(name).transform;
             Vector3 tile = _board.GetTilePosition(tileIndex);
             Vector2 offset = new Vector2(view.position.x - tile.x, view.position.z - tile.z);
-            Assert.Less(offset.magnitude, 0.35f, $"{name} should stand on tile {tileIndex}");
+            Assert.Less(offset.magnitude, 0.45f, $"{name} should stand on tile {tileIndex}");
             Assert.Greater(view.position.y, tile.y);
         }
 

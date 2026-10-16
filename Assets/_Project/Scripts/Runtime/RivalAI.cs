@@ -43,9 +43,14 @@ namespace RollOfLegends
             float score = 0f;
             for (int step = 1; step <= steps; step++)
             {
-                if ((self.Tile + step) % tileCount == enemy.HomeTile)
+                int tile = (self.Tile + step) % tileCount;
+                if (tile == enemy.HomeTile)
                 {
                     score += 6f; // hitting the enemy base is the way to win
+                }
+                else if (tile == self.HomeTile)
+                {
+                    score += 2.5f; // a finished lap gives a level
                 }
             }
 
@@ -57,7 +62,8 @@ namespace RollOfLegends
 
             switch (effectAt(landing))
             {
-                case TileEffect.Sword: score += 4f; break;
+                case TileEffect.Sword: score += 3.5f; break;
+                case TileEffect.Spear: score += 4f; break;
                 case TileEffect.HealthPotion: score += self.Hp < self.StartHp ? 3.5f : 2f; break;
                 case TileEffect.RepairElixir: score += 2.5f; break;
                 case TileEffect.Shield: score += 3f; break;
@@ -75,7 +81,7 @@ namespace RollOfLegends
         private static float MonsterValue(Monster monster)
         {
             if (monster == null) return 0f;
-            float reward = monster.AttackReward * 4f + monster.HpReward * 0.6f;
+            float reward = monster.LevelReward * 5f + monster.HpReward * 0.6f;
             float loss = monster.Damage * 0.8f;
             return monster.WinChance * reward - (1f - monster.WinChance) * loss;
         }

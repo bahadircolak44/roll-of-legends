@@ -45,6 +45,12 @@ namespace RollOfLegends
             return tile < _effects.Length ? _effects[tile] : TileEffect.None;
         }
 
+        /// <summary>The object shown on a tile (a pickup, trap or monster model), or null.</summary>
+        public GameObject GetMarker(int tile)
+        {
+            return tile < _markers.Length ? _markers[tile] : null;
+        }
+
         /// <summary>The monster on a monster tile (null on any other tile).</summary>
         public Monster GetMonster(int tile)
         {

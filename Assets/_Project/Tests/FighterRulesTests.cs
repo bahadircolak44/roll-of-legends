@@ -54,6 +54,7 @@ namespace RollOfLegends.Tests
             Fighter fighter = NewFighter();
             fighter.Tile = 9;
             fighter.Heal(10);
+            fighter.LevelUp(3);
             fighter.Attack = 6;
             fighter.Defense = 2;
             fighter.NextRollBonus = 2;
@@ -63,7 +64,9 @@ namespace RollOfLegends.Tests
             fighter.Respawn();
             Assert.AreEqual(0, fighter.Tile);
             Assert.AreEqual(20, fighter.Hp);
+            Assert.AreEqual(1, fighter.Level);
             Assert.AreEqual(2, fighter.Attack);
+            Assert.AreEqual(fighter.StartSiege, fighter.Siege);
             Assert.AreEqual(0, fighter.Defense);
             Assert.AreEqual(0, fighter.NextRollBonus);
             Assert.IsFalse(fighter.LuckyDraw);
@@ -180,7 +183,8 @@ namespace RollOfLegends.Tests
             EffectResult result = TileRules.FightMonster(fighter, new Monster(MonsterTier.Big, 2, 6), 6);
             Assert.IsTrue(result.Good);
             Assert.IsTrue(result.RemoveEffect);
-            Assert.AreEqual(4, fighter.Attack, "Big monster: +2 ATK");
+            Assert.AreEqual(4, fighter.Level, "Big monster: +3 LV");
+            Assert.AreEqual(5, fighter.Attack, "Each level: +1 ATK");
             Assert.AreEqual(23, fighter.Hp, "Big monster: +3 HP");
         }
 
@@ -196,13 +200,37 @@ namespace RollOfLegends.Tests
         }
 
         [Test]
-        public void Fight_SmallMonsterGivesHpAndMediumGivesAttack()
+        public void Fight_BiggerMonstersGiveMoreLevels()
         {
             Fighter fighter = NewFighter();
             TileRules.FightMonster(fighter, new Monster(MonsterTier.Small, 1, 2, 3, 4, 5), 1);
             Assert.AreEqual(23, fighter.Hp);
+            Assert.AreEqual(2, fighter.Level, "Small: +1 LV");
             TileRules.FightMonster(fighter, new Monster(MonsterTier.Medium, 1, 2, 3), 1);
-            Assert.AreEqual(3, fighter.Attack);
+            Assert.AreEqual(4, fighter.Level, "Medium: +2 LV");
+        }
+
+        [Test]
+        public void LevelUp_RaisesAttackAndSiege()
+        {
+            Fighter fighter = NewFighter();
+            int siege = fighter.Siege;
+            fighter.LevelUp(2);
+            Assert.AreEqual(3, fighter.Level);
+            Assert.AreEqual(4, fighter.Attack);
+            Assert.AreEqual(siege + 2, fighter.Siege);
+        }
+
+        [Test]
+        public void Spear_RaisesSiegeOnly()
+        {
+            Fighter fighter = NewFighter();
+            int siege = fighter.Siege;
+            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Spear);
+            Assert.AreEqual(siege + 1, fighter.Siege);
+            Assert.AreEqual(2, fighter.Attack);
+            Assert.AreEqual("+1 SIEGE", result.Change);
+            Assert.IsTrue(result.RemoveEffect);
         }
 
         [Test]
@@ -234,6 +262,18 @@ namespace RollOfLegends.Tests
             EffectResult result = TileRules.CastSpell(NewFighter(), rival, Spell.Quake);
             Assert.AreEqual(10 - TileRules.QuakeDamage, rival.BaseHp);
             Assert.IsTrue(result.OtherChangeOnBase);
+        }
+
+        [Test]
+        public void Wisdom_GivesOneToThreeLevels()
+        {
+            for (int i = 0; i < 50; i++)
+            {
+                Fighter caster = NewFighter();
+                EffectResult result = TileRules.CastSpell(caster, NewRival(), Spell.Wisdom);
+                Assert.That(caster.Level, Is.InRange(2, 4));
+                Assert.AreEqual(Spell.Wisdom, result.SpellCast);
+            }
         }
 
         [Test]

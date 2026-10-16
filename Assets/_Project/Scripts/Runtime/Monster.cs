@@ -13,7 +13,7 @@ namespace RollOfLegends
     /// <summary>
     /// A monster waiting on a tile. Landing there starts a fight: you get a random fight card and roll it.
     /// Rolling one of the monster's winning numbers defeats it; otherwise it attacks you.
-    /// Bigger monsters have fewer winning numbers but better rewards.
+    /// Bigger monsters have fewer winning numbers but give more levels.
     /// </summary>
     public class Monster
     {
@@ -49,7 +49,8 @@ namespace RollOfLegends
         /// <summary>Damage the monster deals when you lose (before your defense).</summary>
         public int Damage => Tier == MonsterTier.Small ? 2 : Tier == MonsterTier.Medium ? 3 : 5;
 
-        public int AttackReward => Tier == MonsterTier.Small ? 0 : Tier == MonsterTier.Medium ? 1 : 2;
+        /// <summary>Levels gained for beating it: small +1, medium +2, big +3.</summary>
+        public int LevelReward => Tier == MonsterTier.Small ? 1 : Tier == MonsterTier.Medium ? 2 : 3;
         public int HpReward => Tier == MonsterTier.Small ? 3 : Tier == MonsterTier.Medium ? 0 : 3;
 
         public string TierName => Tier.ToString();

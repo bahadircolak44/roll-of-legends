@@ -360,3 +360,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: RollOfLegends.Runtime::RollOfLegends.ModelAnimator
   _clip: {fileID: -2735293274216970117, guid: 88719ebf8a100a2f399d7a09920ebff4, type: 3}
   _speed: 1
+  _actions:
+  - {fileID: 4447012609936615250, guid: 88719ebf8a100a2f399d7a09920ebff4, type: 3}
+  - {fileID: -7710415605997073860, guid: 88719ebf8a100a2f399d7a09920ebff4, type: 3}
+  - {fileID: -2735293274216970117, guid: 88719ebf8a100a2f399d7a09920ebff4, type: 3}
+  - {fileID: 8879800592296100609, guid: 88719ebf8a100a2f399d7a09920ebff4, type: 3}
+  - {fileID: -3663672522963054737, guid: 88719ebf8a100a2f399d7a09920ebff4, type: 3}
+  - {fileID: 380537578229758779, guid: 88719ebf8a100a2f399d7a09920ebff4, type: 3}
+  - {fileID: -4592842328519117816, guid: 88719ebf8a100a2f399d7a09920ebff4, type: 3}
+  - {fileID: -8174297497461417188, guid: 88719ebf8a100a2f399d7a09920ebff4, type: 3}

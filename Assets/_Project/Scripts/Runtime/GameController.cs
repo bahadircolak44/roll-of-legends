@@ -9,7 +9,8 @@ namespace RollOfLegends
     /// Runs a match against the rival AI.
     /// Your turn: tap a card to see where you could land, tap it again to roll -> the die rolls ->
     /// your hero hops -> the tile's effect happens -> you draw a new card. Then the rival does the same.
-    /// Passing the enemy base damages it; the first to destroy the other base wins.
+    /// Passing the enemy base throws a spear at it (siege damage); the first to destroy the other base wins.
+    /// Landing on the other hero is a sword attack. Levels (monsters, spell books, finished laps) raise both.
     /// </summary>
     public class GameController : MonoBehaviour
     {
@@ -22,6 +23,7 @@ namespace RollOfLegends
         private static readonly Color BaseHitColor = new Color(1f, 0.6f, 0.2f);
         private static readonly Color SkipColor = new Color(0.8f, 0.65f, 1f);
         private static readonly Color SpellColor = new Color(0.85f, 0.6f, 1f);
+        private static readonly Color LevelColor = CombatFx.LevelColor;
         private static readonly Vector3 AboveHead = Vector3.up * 1.5f; // where floating texts start
 
         [Header("Scene objects")]
@@ -34,6 +36,7 @@ namespace RollOfLegends
         [SerializeField] private Transform _rivalCastle;
         [SerializeField] private MoveHighlighter _highlighter;
         [SerializeField] private FxSpawner _fx;
+        [SerializeField] private CombatFx _combat;
 
         [Header("UI")]
         [SerializeField] private Button _playButton;
@@ -51,6 +54,7 @@ namespace RollOfLegends
         [Header("Starting stats (both sides)")]
         [SerializeField] private int _startHp = 20;
         [SerializeField] private int _startAttack = 2;
+        [SerializeField] private int _startSiege = 2;
         [SerializeField] private int _baseHp = 10;
 
         [Header("Movement and pacing")]
@@ -58,7 +62,7 @@ namespace RollOfLegends
         [SerializeField] private float _heroHeight = 0.62f;
 
         [Tooltip("Sideways offset so both heroes stay visible on the same tile.")]
-        [SerializeField] private float _heroSideOffset = 0.3f;
+        [SerializeField] private float _heroSideOffset = 0.38f;
 
         [Tooltip("Seconds for one hop from a tile to the next.")]
         [SerializeField] private float _hopDuration = 0.3f;
@@ -139,18 +143,23 @@ namespace RollOfLegends
         public void StartGame()
         {
             StopAllCoroutines();
+            _combat.Clear();
             IsBusy = false;
             IsGameOver = false;
 
             int rivalHome = _board.TileCount / 2; // the corner diagonally opposite START
-            Player = new Fighter(_playerName, 0, _startHp, _startAttack, _baseHp);
-            Rival = new Fighter(_rivalName, rivalHome, _startHp, _startAttack, _baseHp);
+            Player = new Fighter(_playerName, 0, _startHp, _startAttack, _baseHp, _startSiege);
+            Rival = new Fighter(_rivalName, rivalHome, _startHp, _startAttack, _baseHp, _startSiege);
             _effects.Setup(Player.HomeTile, Rival.HomeTile);
 
             PlaceView(Player);
             PlaceView(Rival);
-            _heroView.localScale = Vector3.one; // in case a landing squash was interrupted
-            _rivalView.localScale = Vector3.one;
+            foreach (Transform view in new[] { _heroView, _rivalView })
+            {
+                view.localScale = Vector3.one; // in case a landing squash was interrupted
+                view.rotation = Quaternion.identity;
+                CombatFx.StopAnimation(view);
+            }
             _heroView.gameObject.SetActive(true);
             _rivalView.gameObject.SetActive(true);
             _playerBadge.gameObject.SetActive(true);
@@ -332,12 +341,7 @@ namespace RollOfLegends
 
                 if (mover.Tile == other.HomeTile)
                 {
-                    int damage = other.DamageBase(mover.Attack);
-                    Transform castle = CastleOf(other);
-                    _fx.Popup(castle.position + Vector3.up * 2.2f, $"-{damage} BASE", BaseHitColor);
-                    _fx.Burst(castle.position + Vector3.up * 1f, BaseHitColor);
-                    Log($"{NameOf(mover)} hit {NameOf(other)}'s base: <color=#{Hex(BaseHitColor)}>-{damage}</color> ({other.BaseHp} left)");
-                    UpdateBadges();
+                    yield return SiegeAttack(mover, other);
                     if (other.BaseHp == 0)
                     {
                         EndGame(mover == Player);
@@ -347,9 +351,12 @@ namespace RollOfLegends
                 else if (mover.Tile == mover.HomeTile)
                 {
                     mover.Heal(TileRules.PassHomeHeal);
+                    mover.LevelUp(TileRules.PassHomeLevels);
                     _fx.Popup(view.position + AboveHead, $"+{TileRules.PassHomeHeal} HP", GainColor);
-                    Log($"{NameOf(mover)} passed home: <color=#{Hex(GainColor)}>+{TileRules.PassHomeHeal} HP</color>");
+                    Log($"{NameOf(mover)} passed home: <color=#{Hex(GainColor)}>+{TileRules.PassHomeHeal} HP</color> " +
+                        $"<color=#{Hex(LevelColor)}>+{TileRules.PassHomeLevels} LV</color>");
                     UpdateBadges();
+                    yield return ShowLevelUp(mover);
                 }
             }
 
@@ -359,7 +366,7 @@ namespace RollOfLegends
             }
             else
             {
-                ResolveLanding(mover, other);
+                yield return ResolveLanding(mover, other);
             }
             UpdateBadges();
             if (other.BaseHp == 0) // e.g. an earthquake spell
@@ -391,16 +398,58 @@ namespace RollOfLegends
             yield return _dice.Roll(roll);
 
             EffectResult result = TileRules.FightMonster(fighter, monster, roll);
+            GameObject marker = _effects.GetMarker(fighter.Tile);
+            Transform monsterView = marker != null ? marker.transform : null;
+            Vector3 monsterBody = _board.GetTilePosition(fighter.Tile) + Vector3.up * 0.6f;
+            if (result.Good)
+            {
+                yield return DefeatMonster(view, monsterView, monsterBody);
+            }
+            else
+            {
+                yield return MonsterStrikes(view, monsterView);
+            }
+
             Color color = result.Good ? AttackColor : LossColor;
             _fx.Popup(view.position + AboveHead, result.Good ? $"WIN! {result.Change}" : result.Change, color);
-            _fx.Burst(_board.GetTilePosition(fighter.Tile) + Vector3.up * 0.6f, color);
             Log($"{NameOf(fighter)} {result.Description}: <color=#{Hex(color)}>{result.Change}</color>");
+            UpdateBadges();
 
             if (result.RemoveEffect)
             {
                 _effects.MoveElsewhere(fighter.Tile, Player.Tile, Rival.Tile);
             }
-            if (fighter.IsKnockedOut) KnockOut(fighter);
+            if (result.Good) yield return ShowLevelUp(fighter);
+            if (fighter.IsKnockedOut) yield return KnockOut(fighter);
+        }
+
+        /// <summary>The hero swings at the monster, which flinches, falls and vanishes in a puff of smoke.</summary>
+        private IEnumerator DefeatMonster(Transform hero, Transform monster, Vector3 monsterBody)
+        {
+            yield return _combat.Face(hero, monsterBody);
+            CombatFx.Animate(hero, 1.4f, "1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Diagonal");
+            _combat.Run(_combat.Lunge(hero, monsterBody));
+            yield return new WaitForSeconds(0.22f);
+
+            _combat.Run(_combat.Slash(monsterBody, CombatFx.SlashColor, tilt: 25f));
+            _combat.Run(_combat.Hit(monster, 1.2f));
+            yield return new WaitForSeconds(0.35f);
+            float fall = CombatFx.Animate(monster, 1.5f, "Death");
+            yield return new WaitForSeconds(Mathf.Min(fall, 0.5f));
+
+            _combat.Poof(monsterBody);
+            if (monster != null) monster.gameObject.SetActive(false); // MoveElsewhere removes it for good
+            yield return _combat.FaceFront(hero);
+        }
+
+        /// <summary>The monster lunges and claws at the hero.</summary>
+        private IEnumerator MonsterStrikes(Transform hero, Transform monster)
+        {
+            CombatFx.Animate(monster, 1.3f, "Punch", "Bite_Front", "Headbutt", "Weapon");
+            if (monster != null) _combat.Run(_combat.Lunge(monster, hero.position, 0.3f, 0.4f));
+            yield return new WaitForSeconds(0.25f);
+            _combat.Run(_combat.Claw(hero.position + Vector3.up * 0.25f));
+            yield return _combat.Hit(hero);
         }
 
         /// <summary>A random common card (no DOUBLE): fights are about rolling a single die.</summary>
@@ -410,22 +459,20 @@ namespace RollOfLegends
             return new DiceCard(type, type == DiceType.Fixed ? Random.Range(1, 7) : 0);
         }
 
-        private void ResolveLanding(Fighter mover, Fighter other)
+        private IEnumerator ResolveLanding(Fighter mover, Fighter other)
         {
             if (mover.Tile == other.Tile)
             {
-                int damage = other.TakeDamage(mover.Attack);
-                Transform target = ViewOf(other);
-                _fx.Popup(target.position + AboveHead, $"-{damage} HP", LossColor);
-                _fx.Burst(target.position, LossColor);
-                Log($"{NameOf(mover)} attacked {NameOf(other)}: <color=#{Hex(LossColor)}>-{damage} HP</color>");
-                if (other.IsKnockedOut) KnockOut(other);
-                return;
+                yield return MeleeAttack(mover, other);
+                yield break;
             }
 
             TileEffect effect = _effects.GetEffect(mover.Tile);
+            int levelBefore = mover.Level;
             EffectResult result = TileRules.Apply(mover, other, effect);
-            if (!result.HasEffect) return;
+            if (!result.HasEffect) yield break;
+
+            yield return EffectFx(mover, other, effect, result);
 
             Color color = ChangeColor(result);
             Transform view = ViewOf(mover);
@@ -433,29 +480,166 @@ namespace RollOfLegends
             _fx.Burst(_board.GetTilePosition(mover.Tile) + Vector3.up * 0.4f, color);
             string extra = result.OtherChange != null ? $" (<color=#{Hex(LossColor)}>{result.OtherChange}</color>)" : "";
             Log($"{NameOf(mover)} {result.Description}: <color=#{Hex(color)}>{result.Change}</color>{extra}");
+            UpdateBadges();
 
             if (result.OtherChange != null)
             {
                 // A spell hit the other side: show it over their hero or their castle.
                 Vector3 at = result.OtherChangeOnBase ? CastleOf(other).position + Vector3.up * 2.2f : ViewOf(other).position + AboveHead;
                 _fx.Popup(at, result.OtherChange, result.OtherChangeOnBase ? BaseHitColor : LossColor);
-                _fx.Burst(at - Vector3.up, LossColor);
-                if (other.IsKnockedOut) KnockOut(other);
+                if (other.IsKnockedOut) yield return KnockOut(other);
             }
 
             if (result.RemoveEffect)
             {
                 _effects.MoveElsewhere(mover.Tile, Player.Tile, Rival.Tile);
             }
-            if (mover.IsKnockedOut) KnockOut(mover);
+            if (mover.Level > levelBefore) yield return ShowLevelUp(mover);
+            if (mover.IsKnockedOut) yield return KnockOut(mover);
         }
 
-        private void KnockOut(Fighter fighter)
+        /// <summary>Landing on the other hero: turn, swing the sword (damage = attack), the other hero gets hit.</summary>
+        private IEnumerator MeleeAttack(Fighter mover, Fighter other)
         {
+            Transform attacker = ViewOf(mover);
+            Transform target = ViewOf(other);
+            yield return _combat.Face(attacker, target.position);
+            CombatFx.Animate(attacker, 1.4f, "1H_Melee_Attack_Slice_Diagonal", "2H_Melee_Attack_Slice", "1H_Melee_Attack_Chop");
+            _combat.Run(_combat.Lunge(attacker, target.position, 0.2f));
+            yield return new WaitForSeconds(0.22f);
+
+            int damage = other.TakeDamage(mover.Attack);
+            _combat.Run(_combat.Slash(target.position + Vector3.up * 0.25f, CombatFx.SlashColor));
+            _combat.Run(_combat.Hit(target, Mathf.Min(1.8f, 0.9f + damage * 0.1f)));
+            _fx.Popup(target.position + AboveHead, $"-{damage} HP", LossColor);
+            Log($"{NameOf(mover)} attacked {NameOf(other)} with the sword: <color=#{Hex(LossColor)}>-{damage} HP</color>");
+            UpdateBadges();
+            yield return new WaitForSeconds(0.5f);
+
+            yield return _combat.FaceFront(attacker);
+            if (other.IsKnockedOut) yield return KnockOut(other);
+        }
+
+        /// <summary>Passing the enemy base: the hero throws a spear at the castle (damage = siege).</summary>
+        private IEnumerator SiegeAttack(Fighter mover, Fighter other)
+        {
+            Transform view = ViewOf(mover);
+            Transform castle = CastleOf(other);
+            Vector3 target = castle.position + Vector3.up * 1.1f;
+            yield return _combat.Face(view, target);
+            CombatFx.Animate(view, 1.3f, "Throw", "1H_Ranged_Shoot");
+            yield return new WaitForSeconds(0.25f);
+
+            int damage = other.DamageBase(mover.Siege);
+            yield return _combat.SpearThrow(view.position + Vector3.up * 0.55f, target, castle);
+            _fx.Popup(castle.position + Vector3.up * 2.2f, $"-{damage} BASE", BaseHitColor);
+            Log($"{NameOf(mover)} threw a spear at {NameOf(other)}'s base: <color=#{Hex(BaseHitColor)}>-{damage}</color> ({other.BaseHp} left)");
+            UpdateBadges();
+            yield return _combat.FaceFront(view);
+        }
+
+        /// <summary>The visual effect for a tile: a glow for pickups, a hit for spikes, a spell show for spell books.</summary>
+        private IEnumerator EffectFx(Fighter mover, Fighter other, TileEffect effect, EffectResult result)
+        {
+            Transform view = ViewOf(mover);
+            switch (effect)
+            {
+                case TileEffect.Sword:
+                case TileEffect.Spear:
+                case TileEffect.Shield:
+                case TileEffect.Chest:
+                    CombatFx.Animate(view, 1.5f, "PickUp", "Interact");
+                    yield return _combat.Aura(view, _heroHeight, AttackColor);
+                    break;
+
+                case TileEffect.HealthPotion:
+                    CombatFx.Animate(view, 1.5f, "Use_Item");
+                    yield return _combat.Aura(view, _heroHeight, CombatFx.HealColor);
+                    break;
+
+                case TileEffect.RepairElixir:
+                    CombatFx.Animate(view, 1.5f, "Use_Item");
+                    _combat.Run(_combat.Aura(view, _heroHeight, new Color(0.45f, 0.7f, 1f)));
+                    yield return _combat.Aura(CastleOf(mover), 0f, new Color(0.45f, 0.7f, 1f));
+                    break;
+
+                case TileEffect.Spikes:
+                    yield return _combat.Hit(view, 0.9f);
+                    break;
+
+                case TileEffect.Snare:
+                    CombatFx.Animate(view, "Hit_B");
+                    yield return _combat.Shake(view, 0.06f, 0.4f);
+                    break;
+
+                case TileEffect.SpellBook:
+                    if (result.SpellCast.HasValue) yield return SpellFx(mover, other, result.SpellCast.Value);
+                    break;
+            }
+        }
+
+        private IEnumerator SpellFx(Fighter caster, Fighter other, Spell spell)
+        {
+            Transform view = ViewOf(caster);
+            Vector3 feet = view.position - Vector3.up * _heroHeight;
+            switch (spell)
+            {
+                case Spell.Fireball:
+                {
+                    Transform target = ViewOf(other);
+                    yield return _combat.Face(view, target.position);
+                    CombatFx.Animate(view, "Spellcast_Shoot", "1H_Ranged_Shoot");
+                    yield return _combat.CastCircle(feet, CombatFx.FireColor);
+                    Vector3 toward = Vector3.ProjectOnPlane(target.position - view.position, Vector3.up).normalized;
+                    yield return _combat.Fireball(view.position + Vector3.up * 0.45f + toward * 0.35f, target.position + Vector3.up * 0.2f);
+                    _combat.Run(_combat.Hit(target, 1.4f));
+                    yield return _combat.FaceFront(view);
+                    break;
+                }
+
+                case Spell.Quake:
+                    CombatFx.Animate(view, "Spellcast_Raise", "Spellcast_Long");
+                    yield return _combat.CastCircle(feet, CombatFx.MagicColor);
+                    yield return _combat.Earthquake(CastleOf(other));
+                    break;
+
+                case Spell.Haste:
+                    CombatFx.Animate(view, "Spellcast_Raise");
+                    yield return _combat.CastCircle(feet, CombatFx.HasteColor);
+                    yield return _combat.Aura(view, _heroHeight, CombatFx.HasteColor);
+                    break;
+
+                default: // Wisdom: the level-up light follows right after
+                    CombatFx.Animate(view, "Spellcast_Raise");
+                    yield return _combat.CastCircle(feet, CombatFx.LevelColor);
+                    break;
+            }
+        }
+
+        private IEnumerator ShowLevelUp(Fighter fighter)
+        {
+            Transform view = ViewOf(fighter);
+            _fx.Popup(view.position + AboveHead, $"LEVEL UP! LV {fighter.Level}", LevelColor);
+            yield return _combat.LevelUp(view, _heroHeight);
+        }
+
+        /// <summary>The hero falls, vanishes in smoke and comes back home with starting stats.</summary>
+        private IEnumerator KnockOut(Fighter fighter)
+        {
+            Transform view = ViewOf(fighter);
+            float fall = CombatFx.Animate(view, 1.5f, "Death_A", "Death_B");
+            yield return new WaitForSeconds(Mathf.Min(fall, 0.8f));
+
+            _combat.Poof(view.position);
             fighter.Respawn();
+            CombatFx.StopAnimation(view);
+            view.rotation = Quaternion.identity;
             PlaceView(fighter);
-            _fx.Popup(ViewOf(fighter).position + AboveHead, "KNOCKED OUT", LossColor);
-            Log($"{NameOf(fighter)} was <color=#{Hex(LossColor)}>knocked out</color>: back home with {fighter.StartHp} HP, all buffs lost");
+            _combat.Run(_combat.Aura(view, _heroHeight, Color.white));
+            _fx.Popup(view.position + AboveHead, "KNOCKED OUT", LossColor);
+            Log($"{NameOf(fighter)} was <color=#{Hex(LossColor)}>knocked out</color>: back home with {fighter.StartHp} HP, all buffs and levels lost");
+            UpdateBadges();
+            yield return new WaitForSeconds(0.3f);
         }
 
         private void EndGame(bool playerWon)
@@ -469,6 +653,13 @@ namespace RollOfLegends
             {
                 card.Hide();
             }
+
+            // The fallen castle blows up; the winner cheers.
+            Transform fallen = CastleOf(playerWon ? Rival : Player);
+            _combat.Explosion(fallen.position + Vector3.up, BaseHitColor, 1.6f);
+            _combat.Run(_combat.Shake(fallen, 0.2f, 1f));
+            CombatFx.Animate(ViewOf(playerWon ? Player : Rival), "Cheer");
+
             _playButton.GetComponentInChildren<Text>().text = "PLAY AGAIN";
             _playButton.gameObject.SetActive(true);
         }
@@ -575,7 +766,8 @@ namespace RollOfLegends
         private static Color ChangeColor(EffectResult result)
         {
             if (!result.Good) return result.Change.Contains("SKIP") || result.Change.Contains("ROLL") ? SkipColor : LossColor;
-            if (result.Change.Contains("ATK") || result.Change.Contains("DEF")) return AttackColor;
+            if (result.Change.Contains("LV")) return LevelColor;
+            if (result.Change.Contains("ATK") || result.Change.Contains("DEF") || result.Change.Contains("SIEGE")) return AttackColor;
             if (result.Change.Contains("BASE")) return BaseHitColor;
             if (result.Change.Contains("!")) return SpellColor;
             return GainColor;
