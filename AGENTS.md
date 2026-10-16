@@ -11,7 +11,7 @@ Instructions for AI coding agents working on **Roll of Legends** — a 3D mobile
 ## Working with the user
 
 - The user is a **Unity beginner**. Keep code simple and readable, avoid heavy architecture, and explain any manual Unity Editor steps click by click.
-- **Do not generate binary assets** (images, models, audio, fonts). Use Unity primitives / placeholders and list exactly what assets you need from the user.
+- **Do not add binary asset files** (images, models, audio, fonts). Use Unity primitives, or draw 2D art in code with `Painter` (see `CardArt`), and list exactly what assets you need from the user.
 
 ## Project facts
 
@@ -21,7 +21,7 @@ Instructions for AI coding agents working on **Roll of Legends** — a 3D mobile
 | Render pipeline | URP (`Assets/Settings/Mobile_RPAsset`, `PC_RPAsset`) |
 | Input | New Input System only (`activeInputHandler: 1`); UI uses `InputSystemUIInputModule` |
 | Game code | `Assets/_Project/Scripts/Runtime` — asmdef `RollOfLegends.Runtime`, namespace `RollOfLegends` |
-| Editor tools | `Assets/_Project/Scripts/Editor` — namespace `RollOfLegends.EditorTools` |
+| Editor tools | `Assets/_Project/Scripts/Editor` — namespace `RollOfLegends.EditorTools` (`PrototypeSceneBuilder` builds the scene) |
 | Tests | `Assets/_Project/Tests` — PlayMode assembly `RollOfLegends.Tests` (NUnit) |
 | Main scene | `Assets/_Project/Scenes/Main.unity` (only scene in Build Settings) |
 

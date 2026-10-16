@@ -20,44 +20,58 @@ namespace RollOfLegends
         public const int MonsterReward = 1;   // attack bonus for beating a monster
         public const int PassHomeHeal = 2;    // healing when passing your own base
 
-        /// <summary>Applies the effect and returns a message for the player.</summary>
-        /// <param name="removeEffect">True if the effect is used up and should leave this tile.</param>
-        public static string Apply(Fighter fighter, TileEffect effect, out bool removeEffect)
+        /// <summary>Applies the effect to the fighter and describes what happened.</summary>
+        public static EffectResult Apply(Fighter fighter, TileEffect effect)
         {
-            removeEffect = false;
             switch (effect)
             {
                 case TileEffect.Sword:
                     fighter.Attack += SwordBonus;
-                    removeEffect = true;
-                    return $"{fighter.Name} found a sword: ATK +{SwordBonus}";
+                    return new EffectResult("found a sword", $"+{SwordBonus} ATK", good: true, removeEffect: true);
 
                 case TileEffect.Potion:
                     fighter.Heal(PotionHeal);
-                    removeEffect = true;
-                    return $"{fighter.Name} drank a potion: HP +{PotionHeal}";
+                    return new EffectResult("drank a potion", $"+{PotionHeal} HP", good: true, removeEffect: true);
 
                 case TileEffect.Spikes:
                     fighter.TakeDamage(SpikeDamage);
-                    return $"{fighter.Name} stepped on spikes: HP -{SpikeDamage}";
+                    return new EffectResult("stepped on spikes", $"-{SpikeDamage} HP", good: false, removeEffect: false);
 
                 case TileEffect.Snare:
                     fighter.SkipTurns = 1;
-                    return $"{fighter.Name} is caught in a snare: skips the next turn";
+                    return new EffectResult("got caught in a snare", "SKIP TURN", good: false, removeEffect: false);
 
                 case TileEffect.Monster:
                     if (fighter.Attack >= MonsterPower)
                     {
                         fighter.Attack += MonsterReward;
-                        removeEffect = true;
-                        return $"{fighter.Name} defeated a monster: ATK +{MonsterReward}";
+                        return new EffectResult("defeated a monster", $"+{MonsterReward} ATK", good: true, removeEffect: true);
                     }
                     fighter.TakeDamage(MonsterPower);
-                    return $"A monster was too strong for {fighter.Name}: HP -{MonsterPower}";
+                    return new EffectResult("was beaten by a monster", $"-{MonsterPower} HP", good: false, removeEffect: false);
 
                 default:
-                    return null;
+                    return default;
             }
         }
+    }
+
+    /// <summary>What a tile effect did, for the history log ("found a sword") and the floating text ("+1 ATK").</summary>
+    public readonly struct EffectResult
+    {
+        public readonly string Description;
+        public readonly string Change;
+        public readonly bool Good;
+        public readonly bool RemoveEffect;
+
+        public EffectResult(string description, string change, bool good, bool removeEffect)
+        {
+            Description = description;
+            Change = change;
+            Good = good;
+            RemoveEffect = removeEffect;
+        }
+
+        public bool HasEffect => Description != null;
     }
 }

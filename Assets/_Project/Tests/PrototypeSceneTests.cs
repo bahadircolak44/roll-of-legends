@@ -16,6 +16,8 @@ namespace RollOfLegends.Tests
         private Board _board;
         private BoardEffects _effects;
         private DiceView _dice;
+        private MoveHighlighter _highlighter;
+        private EventLog _log;
 
         [UnitySetUp]
         public IEnumerator LoadMainScene()
@@ -29,6 +31,8 @@ namespace RollOfLegends.Tests
             _board = Object.FindFirstObjectByType<Board>();
             _effects = Object.FindFirstObjectByType<BoardEffects>();
             _dice = Object.FindFirstObjectByType<DiceView>(FindObjectsInactive.Include);
+            _highlighter = Object.FindFirstObjectByType<MoveHighlighter>();
+            _log = Object.FindFirstObjectByType<EventLog>();
         }
 
         [TearDown]
@@ -106,6 +110,29 @@ namespace RollOfLegends.Tests
             Assert.AreEqual(3, _effects.Count(TileEffect.Monster));
             Assert.AreEqual(TileEffect.None, _effects.GetEffect(0), "Bases stay free of effects");
             Assert.AreEqual(TileEffect.None, _effects.GetEffect(14), "Bases stay free of effects");
+            StringAssert.Contains("new match", _log.Entries[0]);
+        }
+
+        // ---------- Choosing a card ----------
+
+        [Test]
+        public void SelectingACard_HighlightsLandingTilesWithoutMoving()
+        {
+            StartWithEmptyBoard();
+            _controller.GiveCard(0, new DiceCard(DiceType.Odd, 0));
+            _controller.GiveCard(1, new DiceCard(DiceType.Random, 0));
+
+            Click("Card_0");
+            Assert.AreEqual(0, _controller.SelectedSlot);
+            CollectionAssert.AreEqual(new[] { 1, 3, 5 }, _highlighter.ActiveTiles, "ODD can land 1, 3 or 5 tiles ahead");
+            Assert.IsFalse(_controller.IsBusy, "Selecting must not roll yet");
+            Assert.AreEqual(0, _controller.Player.Tile);
+            StringAssert.Contains("again to roll", _controller.Message);
+
+            Click("Card_1");
+            Assert.AreEqual(1, _controller.SelectedSlot, "Tapping another card switches the selection");
+            CollectionAssert.AreEqual(new[] { 1, 2, 3, 4, 5, 6 }, _highlighter.ActiveTiles);
+            Assert.AreEqual(0, _controller.Rival.TurnsTaken);
         }
 
         // ---------- Turns ----------
@@ -119,7 +146,10 @@ namespace RollOfLegends.Tests
 
             _controller.GiveCard(0, new DiceCard(DiceType.Fixed, 4));
             Click("Card_0");
+            CollectionAssert.AreEqual(new[] { 4 }, _highlighter.ActiveTiles, "A FIXED 4 card can only land 4 ahead");
+            Click("Card_0"); // second tap rolls
             Assert.IsTrue(_controller.IsBusy);
+            Assert.AreEqual(0, _highlighter.ActiveTiles.Count, "Highlights disappear once you roll");
             Assert.IsNull(GameObject.Find("Card_0"), "The played card should leave the hand");
             Assert.IsFalse(CardButton(1).interactable, "Cards should be locked while moving");
 
@@ -131,7 +161,7 @@ namespace RollOfLegends.Tests
 
             Assert.AreEqual(4, _controller.Player.Tile);
             AssertViewOn("Hero", 4);
-            Assert.Greater(highestHeroY, 0.7f, "Hero should hop, not slide or teleport");
+            Assert.Greater(highestHeroY, 1.0f, "Hero should hop, not slide or teleport");
 
             Assert.AreEqual(1, _controller.Rival.TurnsTaken, "Rival should play once after you");
             Assert.AreNotEqual(14, _controller.Rival.Tile, "Rival should have moved");
@@ -151,11 +181,14 @@ namespace RollOfLegends.Tests
             DiceCard secondCard = _controller.Hand[1];
 
             Click("Card_0");
-            CardButton(1).onClick.Invoke(); // second tap while busy
+            Click("Card_0");
+            CardButton(1).onClick.Invoke(); // taps while busy
+            CardButton(1).onClick.Invoke();
             yield return WaitUntilIdle();
 
             Assert.AreEqual(2, _controller.Player.Tile);
             Assert.AreEqual(secondCard, _controller.Hand[1], "The second card should still be in the hand");
+            Assert.AreEqual(-1, _controller.SelectedSlot);
         }
 
         // ---------- Tile effects ----------
@@ -171,6 +204,22 @@ namespace RollOfLegends.Tests
             Assert.AreEqual(3, _controller.Player.Attack);
             Assert.AreEqual(TileEffect.None, _effects.GetEffect(3));
             Assert.AreEqual(1, _effects.Count(TileEffect.Sword), "The sword reappears on another tile");
+        }
+
+        [UnityTest]
+        public IEnumerator HistoryLog_RecordsWhoDidWhat()
+        {
+            StartWithEmptyBoard();
+            _effects.SetEffect(3, TileEffect.Sword);
+
+            yield return PlayFixed(3);
+
+            string history = string.Join("\n", _log.Entries);
+            StringAssert.Contains("Bahadır", history);
+            StringAssert.Contains("FIXED 3", history);
+            StringAssert.Contains("found a sword", history);
+            StringAssert.Contains("+1 ATK", history);
+            StringAssert.Contains("Rival", history, "The rival's turn is logged too");
         }
 
         [UnityTest]
@@ -223,6 +272,7 @@ namespace RollOfLegends.Tests
 
             Assert.IsTrue(_controller.IsGameOver);
             StringAssert.Contains("YOU WIN", _controller.Message);
+            StringAssert.Contains("wins", _log.Entries[_log.Entries.Count - 1]);
             Assert.AreEqual(0, _controller.Rival.TurnsTaken, "The game ends before the rival plays");
             Assert.IsNull(GameObject.Find("Card_0"), "Cards are hidden after the game ends");
 
@@ -250,8 +300,8 @@ namespace RollOfLegends.Tests
 
             foreach (Renderer tile in _board.GetComponentsInChildren<Renderer>())
             {
-                AssertInView(camera, tile.bounds.min, fit);
-                AssertInView(camera, tile.bounds.max, fit);
+                AssertInView(camera, tile.bounds.min, fit.SafeArea);
+                AssertInView(camera, tile.bounds.max, fit.SafeArea);
             }
 
             camera.ResetAspect();
@@ -272,7 +322,8 @@ namespace RollOfLegends.Tests
         private IEnumerator PlayFixed(int value)
         {
             _controller.GiveCard(0, new DiceCard(DiceType.Fixed, value));
-            Click("Card_0");
+            Click("Card_0"); // select
+            Click("Card_0"); // roll
             yield return WaitUntilIdle();
         }
 
@@ -305,12 +356,12 @@ namespace RollOfLegends.Tests
             Assert.Greater(view.position.y, tile.y);
         }
 
-        private static void AssertInView(Camera camera, Vector3 worldPoint, CameraFit fit)
+        private static void AssertInView(Camera camera, Vector3 worldPoint, Rect safeArea)
         {
-            // The board must stay between the info panel (top) and the cards (bottom).
+            // The board must stay inside the part of the screen the UI panels leave free.
             Vector3 viewport = camera.WorldToViewportPoint(worldPoint);
-            Assert.That(viewport.x, Is.InRange(0f, 1f), $"{worldPoint} is off-screen horizontally");
-            Assert.That(viewport.y, Is.InRange(fit.BottomMargin, 1f - fit.TopMargin), $"{worldPoint} is under the UI");
+            Assert.That(viewport.x, Is.InRange(safeArea.xMin - 0.001f, safeArea.xMax + 0.001f), $"{worldPoint} is off-screen or under the UI horizontally");
+            Assert.That(viewport.y, Is.InRange(safeArea.yMin - 0.001f, safeArea.yMax + 0.001f), $"{worldPoint} is off-screen or under the UI vertically");
             Assert.Greater(viewport.z, 0f, $"{worldPoint} is behind the camera");
         }
     }
