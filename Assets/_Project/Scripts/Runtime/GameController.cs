@@ -1,12 +1,14 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace RollOfLegends
 {
     /// <summary>
-    /// Runs the prototype: PLAY puts the hero on the START tile, ROLL DICE spins the die
-    /// and then the hero hops forward one tile at a time.
+    /// Runs the prototype: PLAY deals a hand of dice cards and puts the hero on START.
+    /// Tapping a card rolls the die with that card, the hero hops forward, and a new card
+    /// is drawn into the empty slot.
     /// </summary>
     public class GameController : MonoBehaviour
     {
@@ -17,12 +19,8 @@ namespace RollOfLegends
 
         [Header("UI")]
         [SerializeField] private Button _playButton;
-        [SerializeField] private Button _rollButton;
+        [SerializeField] private CardView[] _cardSlots;
         [SerializeField] private Text _infoText;
-
-        [Header("Rules")]
-        [Tooltip("The number a Fixed die always rolls.")]
-        [SerializeField, Range(1, 6)] private int _fixedDiceValue = 3;
 
         [Header("Hero movement")]
         [Tooltip("How far above the tile the hero's center stands.")]
@@ -37,24 +35,36 @@ namespace RollOfLegends
         [Tooltip("Pause after the die lands, before the hero starts hopping.")]
         [SerializeField] private float _pauseAfterDice = 0.3f;
 
+        private DiceCard[] _hand;
+
         public int HeroTileIndex { get; private set; }
         public int LastRoll { get; private set; }
-        public DiceType LastDiceType { get; private set; }
+        public DiceCard LastCard { get; private set; }
+        public IReadOnlyList<DiceCard> Hand => _hand;
 
         /// <summary>True while the die is spinning or the hero is still hopping.</summary>
         public bool IsRolling { get; private set; }
 
         private void Awake()
         {
+            _hand = new DiceCard[_cardSlots.Length];
             _playButton.onClick.AddListener(StartGame);
-            _rollButton.onClick.AddListener(RollDice);
+
+            for (int i = 0; i < _cardSlots.Length; i++)
+            {
+                int slot = i; // copy for the click handler below
+                _cardSlots[i].Button.onClick.AddListener(() => PlayCard(slot));
+            }
         }
 
         private void Start()
         {
             _hero.gameObject.SetActive(false);
             _dice.gameObject.SetActive(false);
-            _rollButton.gameObject.SetActive(false);
+            foreach (CardView card in _cardSlots)
+            {
+                card.Hide();
+            }
             _playButton.gameObject.SetActive(true);
             _infoText.text = "Press PLAY to start";
         }
@@ -65,42 +75,61 @@ namespace RollOfLegends
             _hero.position = HeroPositionOn(HeroTileIndex);
             _hero.gameObject.SetActive(true);
             _playButton.gameObject.SetActive(false);
-            _rollButton.gameObject.SetActive(true);
+
+            for (int slot = 0; slot < _hand.Length; slot++)
+            {
+                DrawInto(slot);
+            }
             ShowInfo("-", "-");
         }
 
-        public void RollDice()
+        public void PlayCard(int slot)
         {
             if (IsRolling)
             {
-                return; // ignore extra taps until the hero has finished moving
+                return; // ignore taps until the hero has finished moving
             }
-            StartCoroutine(RollAndMove());
+            StartCoroutine(PlayCardAndMove(slot));
         }
 
-        private IEnumerator RollAndMove()
+        private IEnumerator PlayCardAndMove(int slot)
         {
             IsRolling = true;
-            _rollButton.interactable = false;
+            SetCardsInteractable(false);
 
-            LastDiceType = Dice.RandomType();
-            LastRoll = Dice.Roll(LastDiceType, _fixedDiceValue);
-            string dice = Dice.Describe(LastDiceType, _fixedDiceValue);
+            LastCard = _hand[slot];
+            LastRoll = LastCard.Roll();
+            _cardSlots[slot].Hide(); // the card leaves the hand
 
-            ShowInfo(dice, "...");
+            ShowInfo(LastCard.Describe(), "...");
             yield return _dice.Roll(LastRoll);
-            ShowInfo(dice, LastRoll.ToString());
+            ShowInfo(LastCard.Describe(), LastRoll.ToString());
             yield return new WaitForSeconds(_pauseAfterDice);
 
             for (int step = 0; step < LastRoll; step++)
             {
                 HeroTileIndex = Board.Advance(HeroTileIndex, 1, _board.TileCount);
                 yield return HopTo(HeroPositionOn(HeroTileIndex));
-                ShowInfo(dice, LastRoll.ToString());
+                ShowInfo(LastCard.Describe(), LastRoll.ToString());
             }
 
-            _rollButton.interactable = true;
+            DrawInto(slot); // a fresh random card fills the empty slot
+            SetCardsInteractable(true);
             IsRolling = false;
+        }
+
+        private void DrawInto(int slot)
+        {
+            _hand[slot] = DiceCard.Draw();
+            _cardSlots[slot].Show(_hand[slot]);
+        }
+
+        private void SetCardsInteractable(bool interactable)
+        {
+            foreach (CardView card in _cardSlots)
+            {
+                card.Button.interactable = interactable;
+            }
         }
 
         private IEnumerator HopTo(Vector3 target)
@@ -121,10 +150,10 @@ namespace RollOfLegends
             return _board.GetTilePosition(tileIndex) + Vector3.up * _heroHeight;
         }
 
-        private void ShowInfo(string dice, string rolled)
+        private void ShowInfo(string card, string rolled)
         {
             string position = HeroTileIndex == 0 ? "START" : $"Tile {HeroTileIndex}";
-            _infoText.text = $"Dice: {dice}\nRolled: {rolled}\nPosition: {position}";
+            _infoText.text = $"Card: {card}\nRolled: {rolled}\nPosition: {position}";
         }
     }
 }
