@@ -6,36 +6,80 @@ namespace RollOfLegends.Tests
     {
         private static Fighter NewFighter()
         {
-            return new Fighter("You", homeTile: 0, maxHp: 20, attack: 2, baseHp: 8);
+            return new Fighter("You", homeTile: 0, startHp: 20, attack: 2, baseHp: 10);
         }
 
+        private static Fighter NewRival()
+        {
+            return new Fighter("Rival", homeTile: 14, startHp: 20, attack: 2, baseHp: 10);
+        }
+
+        // ---------- Health, defense, base ----------
+
         [Test]
-        public void Hp_NeverGoesBelowZeroOrAboveMax()
+        public void Hp_HasNoUpperLimitButNeverGoesBelowZero()
         {
             Fighter fighter = NewFighter();
-            fighter.Heal(10);
-            Assert.AreEqual(20, fighter.Hp);
-            fighter.TakeDamage(50);
+            fighter.Heal(15);
+            Assert.AreEqual(35, fighter.Hp);
+            fighter.TakeDamage(100);
             Assert.AreEqual(0, fighter.Hp);
             Assert.IsTrue(fighter.IsKnockedOut);
         }
 
         [Test]
-        public void Respawn_ReturnsHomeWithFullHp()
+        public void Defense_ReducesDamageButAtLeastOneGetsThrough()
+        {
+            Fighter fighter = NewFighter();
+            fighter.Defense = 2;
+            Assert.AreEqual(1, fighter.TakeDamage(3));
+            Assert.AreEqual(1, fighter.TakeDamage(1), "Always at least 1 damage");
+            Assert.AreEqual(18, fighter.Hp);
+        }
+
+        [Test]
+        public void Base_CanBeDamagedAndRepaired()
+        {
+            Fighter fighter = NewFighter();
+            Assert.AreEqual(4, fighter.DamageBase(4));
+            fighter.RepairBase(7);
+            Assert.AreEqual(13, fighter.BaseHp, "Base health has no upper limit");
+            Assert.AreEqual(13, fighter.DamageBase(50), "Can't take more than what is left");
+            Assert.AreEqual(0, fighter.BaseHp);
+        }
+
+        [Test]
+        public void Respawn_ReturnsHomeWithStartingHp()
         {
             Fighter fighter = NewFighter();
             fighter.Tile = 9;
-            fighter.TakeDamage(20);
+            fighter.Heal(10);
+            fighter.NextRollBonus = -3;
+            fighter.TakeDamage(100);
             fighter.Respawn();
             Assert.AreEqual(0, fighter.Tile);
             Assert.AreEqual(20, fighter.Hp);
+            Assert.AreEqual(0, fighter.NextRollBonus);
         }
+
+        [Test]
+        public void RollBonus_IsAppliedOnceAndYouAlwaysMoveAtLeastOne()
+        {
+            Fighter fighter = NewFighter();
+            fighter.NextRollBonus = -3;
+            Assert.AreEqual(1, fighter.UseRollBonus(2));
+            Assert.AreEqual(2, fighter.UseRollBonus(2), "The bonus is used up");
+            fighter.NextRollBonus = 2;
+            Assert.AreEqual(6, fighter.UseRollBonus(4));
+        }
+
+        // ---------- Tile effects ----------
 
         [Test]
         public void Sword_RaisesAttackAndIsUsedUp()
         {
             Fighter fighter = NewFighter();
-            EffectResult result = TileRules.Apply(fighter, TileEffect.Sword);
+            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Sword);
             Assert.AreEqual(3, fighter.Attack);
             Assert.AreEqual("+1 ATK", result.Change);
             Assert.IsTrue(result.Good);
@@ -43,20 +87,45 @@ namespace RollOfLegends.Tests
         }
 
         [Test]
-        public void Potion_HealsAndIsUsedUp()
+        public void HealthPotion_HealsPastTheStartAndIsUsedUp()
         {
             Fighter fighter = NewFighter();
-            fighter.TakeDamage(10);
-            EffectResult result = TileRules.Apply(fighter, TileEffect.Potion);
-            Assert.AreEqual(14, fighter.Hp);
+            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.HealthPotion);
+            Assert.AreEqual(20 + TileRules.PotionHeal, fighter.Hp);
             Assert.IsTrue(result.RemoveEffect);
+        }
+
+        [Test]
+        public void RepairElixir_HealsTheBase()
+        {
+            Fighter fighter = NewFighter();
+            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.RepairElixir);
+            Assert.AreEqual(10 + TileRules.BaseRepair, fighter.BaseHp);
+            Assert.AreEqual(20, fighter.Hp, "Only the base is healed");
+            StringAssert.Contains("BASE", result.Change);
+        }
+
+        [Test]
+        public void Shield_RaisesDefense()
+        {
+            Fighter fighter = NewFighter();
+            TileRules.Apply(fighter, NewRival(), TileEffect.Shield);
+            Assert.AreEqual(1, fighter.Defense);
+        }
+
+        [Test]
+        public void Chest_MakesTheNextCardRare()
+        {
+            Fighter fighter = NewFighter();
+            TileRules.Apply(fighter, NewRival(), TileEffect.Chest);
+            Assert.IsTrue(fighter.LuckyDraw);
         }
 
         [Test]
         public void Spikes_HurtAndStay()
         {
             Fighter fighter = NewFighter();
-            EffectResult result = TileRules.Apply(fighter, TileEffect.Spikes);
+            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Spikes);
             Assert.AreEqual(17, fighter.Hp);
             Assert.IsFalse(result.Good);
             Assert.IsFalse(result.RemoveEffect);
@@ -66,8 +135,17 @@ namespace RollOfLegends.Tests
         public void Snare_SkipsNextTurnAndStays()
         {
             Fighter fighter = NewFighter();
-            EffectResult result = TileRules.Apply(fighter, TileEffect.Snare);
+            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Snare);
             Assert.AreEqual(1, fighter.SkipTurns);
+            Assert.IsFalse(result.RemoveEffect);
+        }
+
+        [Test]
+        public void Forest_LowersTheNextRollAndStays()
+        {
+            Fighter fighter = NewFighter();
+            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Forest);
+            Assert.AreEqual(-TileRules.ForestPenalty, fighter.NextRollBonus);
             Assert.IsFalse(result.RemoveEffect);
         }
 
@@ -75,7 +153,7 @@ namespace RollOfLegends.Tests
         public void Monster_BeatsWeakFighter()
         {
             Fighter fighter = NewFighter(); // attack 2 < monster power 3
-            EffectResult result = TileRules.Apply(fighter, TileEffect.Monster);
+            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Monster);
             Assert.AreEqual(17, fighter.Hp);
             Assert.AreEqual(2, fighter.Attack);
             Assert.IsFalse(result.RemoveEffect);
@@ -86,7 +164,7 @@ namespace RollOfLegends.Tests
         {
             Fighter fighter = NewFighter();
             fighter.Attack = 3;
-            EffectResult result = TileRules.Apply(fighter, TileEffect.Monster);
+            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Monster);
             Assert.AreEqual(20, fighter.Hp);
             Assert.AreEqual(4, fighter.Attack);
             Assert.IsTrue(result.RemoveEffect);
@@ -96,14 +174,47 @@ namespace RollOfLegends.Tests
         public void EmptyTile_DoesNothing()
         {
             Fighter fighter = NewFighter();
-            Assert.IsFalse(TileRules.Apply(fighter, TileEffect.None).HasEffect);
+            Assert.IsFalse(TileRules.Apply(fighter, NewRival(), TileEffect.None).HasEffect);
             Assert.AreEqual(20, fighter.Hp);
         }
+
+        // ---------- Spells ----------
+
+        [Test]
+        public void Fireball_HitsTheOtherHeroThroughArmor()
+        {
+            Fighter caster = NewFighter();
+            Fighter rival = NewRival();
+            rival.Defense = 5;
+            EffectResult result = TileRules.CastSpell(caster, rival, Spell.Fireball);
+            Assert.AreEqual(20 - TileRules.FireballDamage, rival.Hp);
+            Assert.IsFalse(result.OtherChangeOnBase);
+            Assert.IsNotNull(result.OtherChange);
+        }
+
+        [Test]
+        public void Quake_DamagesTheOtherBase()
+        {
+            Fighter rival = NewRival();
+            EffectResult result = TileRules.CastSpell(NewFighter(), rival, Spell.Quake);
+            Assert.AreEqual(10 - TileRules.QuakeDamage, rival.BaseHp);
+            Assert.IsTrue(result.OtherChangeOnBase);
+        }
+
+        [Test]
+        public void Haste_RaisesYourNextRoll()
+        {
+            Fighter caster = NewFighter();
+            TileRules.CastSpell(caster, NewRival(), Spell.Haste);
+            Assert.AreEqual(TileRules.HasteBonus, caster.NextRollBonus);
+        }
+
+        // ---------- Rival AI ----------
 
         [Test]
         public void RivalAI_PrefersSwordOverSpikes()
         {
-            Fighter rival = new Fighter("Rival", 14, 20, 2, 8);
+            Fighter rival = NewRival();
             Fighter player = NewFighter();
             player.Tile = 5;
             TileEffect EffectAt(int tile) => tile == 16 ? TileEffect.Spikes : tile == 17 ? TileEffect.Sword : TileEffect.None;
@@ -115,7 +226,7 @@ namespace RollOfLegends.Tests
         [Test]
         public void RivalAI_GoesForTheEnemyBase()
         {
-            Fighter rival = new Fighter("Rival", 14, 20, 2, 8);
+            Fighter rival = NewRival();
             rival.Tile = 25;
             Fighter player = NewFighter(); // home tile 0
             player.Tile = 10;
@@ -123,6 +234,20 @@ namespace RollOfLegends.Tests
             var hand = new[] { new DiceCard(DiceType.Fixed, 2), new DiceCard(DiceType.Fixed, 4) };
             Assert.AreEqual(1, RivalAI.ChooseCard(hand, rival, player, _ => TileEffect.None, 28),
                 "Moving 4 from tile 25 passes the player's base on tile 0");
+        }
+
+        [Test]
+        public void RivalAI_AccountsForItsForestPenalty()
+        {
+            Fighter rival = NewRival(); // on tile 14
+            rival.NextRollBonus = -3;
+            Fighter player = NewFighter();
+            player.Tile = 5;
+            // With -3, FIXED 5 lands on 16 (a sword) and FIXED 6 lands on 17 (spikes).
+            TileEffect EffectAt(int tile) => tile == 16 ? TileEffect.Sword : tile == 17 ? TileEffect.Spikes : TileEffect.None;
+
+            var hand = new[] { new DiceCard(DiceType.Fixed, 6), new DiceCard(DiceType.Fixed, 5) };
+            Assert.AreEqual(1, RivalAI.ChooseCard(hand, rival, player, EffectAt, 28));
         }
     }
 }

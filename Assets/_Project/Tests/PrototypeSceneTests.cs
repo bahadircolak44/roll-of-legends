@@ -103,10 +103,15 @@ namespace RollOfLegends.Tests
                 Assert.IsNotNull(GameObject.Find($"Card_{slot}"), $"Card {slot} should be shown");
             }
 
-            Assert.AreEqual(3, _effects.Count(TileEffect.Sword));
-            Assert.AreEqual(3, _effects.Count(TileEffect.Potion));
-            Assert.AreEqual(3, _effects.Count(TileEffect.Spikes));
-            Assert.AreEqual(2, _effects.Count(TileEffect.Snare));
+            Assert.AreEqual(2, _effects.Count(TileEffect.Sword));
+            Assert.AreEqual(2, _effects.Count(TileEffect.HealthPotion));
+            Assert.AreEqual(2, _effects.Count(TileEffect.RepairElixir));
+            Assert.AreEqual(1, _effects.Count(TileEffect.Shield));
+            Assert.AreEqual(2, _effects.Count(TileEffect.SpellBook));
+            Assert.AreEqual(1, _effects.Count(TileEffect.Chest));
+            Assert.AreEqual(2, _effects.Count(TileEffect.Forest));
+            Assert.AreEqual(2, _effects.Count(TileEffect.Spikes));
+            Assert.AreEqual(1, _effects.Count(TileEffect.Snare));
             Assert.AreEqual(3, _effects.Count(TileEffect.Monster));
             Assert.AreEqual(TileEffect.None, _effects.GetEffect(0), "Bases stay free of effects");
             Assert.AreEqual(TileEffect.None, _effects.GetEffect(14), "Bases stay free of effects");
@@ -259,6 +264,91 @@ namespace RollOfLegends.Tests
             Assert.AreEqual(TileEffect.Monster, _effects.GetEffect(2));
         }
 
+        [UnityTest]
+        public IEnumerator HealthPotion_CanRaiseHpAboveTheStart()
+        {
+            StartWithEmptyBoard();
+            _effects.SetEffect(3, TileEffect.HealthPotion);
+
+            yield return PlayFixed(3);
+
+            Assert.AreEqual(20 + TileRules.PotionHeal, _controller.Player.Hp, "HP has no upper limit");
+        }
+
+        [UnityTest]
+        public IEnumerator RepairElixir_HealsTheBase()
+        {
+            StartWithEmptyBoard();
+            _controller.Player.BaseHp = 4;
+            _effects.SetEffect(3, TileEffect.RepairElixir);
+
+            yield return PlayFixed(3);
+
+            Assert.AreEqual(4 + TileRules.BaseRepair, _controller.Player.BaseHp);
+        }
+
+        [UnityTest]
+        public IEnumerator Shield_ReducesDamageFromSpikes()
+        {
+            StartWithEmptyBoard();
+            _controller.Player.Defense = 1;
+            _effects.SetEffect(3, TileEffect.Spikes);
+
+            yield return PlayFixed(3);
+
+            Assert.AreEqual(20 - (TileRules.SpikeDamage - 1), _controller.Player.Hp);
+        }
+
+        [UnityTest]
+        public IEnumerator Forest_LowersTheNextRollAndThePreviewShowsIt()
+        {
+            StartWithEmptyBoard();
+            _effects.SetEffect(2, TileEffect.Forest);
+            yield return PlayFixed(2);
+            Assert.AreEqual(-TileRules.ForestPenalty, _controller.Player.NextRollBonus);
+
+            _controller.GiveCard(0, new DiceCard(DiceType.Fixed, 5));
+            Click("Card_0");
+            CollectionAssert.AreEqual(new[] { 2 + 5 - TileRules.ForestPenalty }, _highlighter.ActiveTiles, "Preview includes the forest penalty");
+            Click("Card_0");
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(2 + 5 - TileRules.ForestPenalty, _controller.Player.Tile);
+            Assert.AreEqual(0, _controller.Player.NextRollBonus, "The penalty is used up");
+        }
+
+        [UnityTest]
+        public IEnumerator Chest_GivesARareDoubleCard()
+        {
+            StartWithEmptyBoard();
+            _effects.SetEffect(3, TileEffect.Chest);
+
+            yield return PlayFixed(3);
+
+            Assert.AreEqual(DiceType.Double, _controller.Hand[0].Type, "The refilled slot holds the rare card");
+        }
+
+        [UnityTest]
+        public IEnumerator DoubleCard_MovesTheTotalOfTwoDice()
+        {
+            StartWithEmptyBoard();
+            _controller.GiveCard(0, DiceCard.DrawRare());
+            Click("Card_0");
+            Assert.Greater(_highlighter.ActiveTiles.Count, 6, "DOUBLE can reach 2 to 12 tiles ahead");
+            Click("Card_0");
+
+            // Wait for the hero to finish (the rival's turn changes LastRoll afterwards).
+            while (_controller.Rival.TurnsTaken == 0 && _controller.IsBusy)
+            {
+                yield return null;
+            }
+            int rolled = _controller.Player.Tile;
+            yield return WaitUntilIdle();
+
+            Assert.That(rolled, Is.InRange(2, 12));
+            StringAssert.Contains("DOUBLE", string.Join("\n", _log.Entries));
+        }
+
         // ---------- Winning ----------
 
         [UnityTest]
@@ -282,7 +372,7 @@ namespace RollOfLegends.Tests
 
             Click("PlayButton");
             Assert.IsFalse(_controller.IsGameOver);
-            Assert.AreEqual(8, _controller.Rival.BaseHp);
+            Assert.AreEqual(10, _controller.Rival.BaseHp);
             Assert.AreEqual(0, _controller.Player.Tile);
         }
 
@@ -351,8 +441,8 @@ namespace RollOfLegends.Tests
         {
             Transform view = GameObject.Find(name).transform;
             Vector3 tile = _board.GetTilePosition(tileIndex);
-            Assert.AreEqual(tile.x, view.position.x, 0.3f, $"{name} should stand on tile {tileIndex}");
-            Assert.AreEqual(tile.z, view.position.z, 0.001f, $"{name} should stand on tile {tileIndex}");
+            Vector2 offset = new Vector2(view.position.x - tile.x, view.position.z - tile.z);
+            Assert.Less(offset.magnitude, 0.35f, $"{name} should stand on tile {tileIndex}");
             Assert.Greater(view.position.y, tile.y);
         }
 

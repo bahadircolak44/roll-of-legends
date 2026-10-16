@@ -11,7 +11,7 @@ Instructions for AI coding agents working on **Roll of Legends** — a 3D mobile
 ## Working with the user
 
 - The user is a **Unity beginner**. Keep code simple and readable, avoid heavy architecture, and explain any manual Unity Editor steps click by click.
-- **Do not add binary asset files** (images, models, audio, fonts). Use Unity primitives, or draw 2D art in code with `Painter` (see `CardArt`), and list exactly what assets you need from the user.
+- **Assets:** 3D models come from free CC0 packs (KayKit, Quaternius) in `Assets/_Project/Art/Models` — see `CREDITS.md`. Never download anything without the user's approval (say file, source, size and license first); the repo is public, so only clearly free licenses. 2D art (cards, UI panels) is drawn in code with `Painter` (see `CardArt`).
 
 ## Project facts
 
@@ -20,6 +20,7 @@ Instructions for AI coding agents working on **Roll of Legends** — a 3D mobile
 | Unity | `6000.3.26f1` — Linux path `~/Unity/Hub/Editor/6000.3.26f1/Editor/Unity` |
 | Render pipeline | URP (`Assets/Settings/Mobile_RPAsset`, `PC_RPAsset`) |
 | Input | New Input System only (`activeInputHandler: 1`); UI uses `InputSystemUIInputModule` |
+| Packages | URP 17.3, Input System, glTFast (`com.unity.cloud.gltfast`, for the .glb heroes) |
 | Game code | `Assets/_Project/Scripts/Runtime` — asmdef `RollOfLegends.Runtime`, namespace `RollOfLegends` |
 | Editor tools | `Assets/_Project/Scripts/Editor` — namespace `RollOfLegends.EditorTools` (`PrototypeSceneBuilder` builds the scene) |
 | Tests | `Assets/_Project/Tests` — PlayMode assembly `RollOfLegends.Tests` (NUnit) |

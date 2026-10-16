@@ -50,6 +50,7 @@ namespace RollOfLegends
                 DiceType.Odd => "1\u00A0·\u00A03\u00A0·\u00A05",
                 DiceType.Even => "2\u00A0·\u00A04\u00A0·\u00A06",
                 DiceType.Fixed => card.FixedValue.ToString(),
+                DiceType.Double => "2\u00A0–\u00A012",
                 _ => "1\u00A0–\u00A06",
             };
             _glow.color = CardArt.AccentColor(card.Type);

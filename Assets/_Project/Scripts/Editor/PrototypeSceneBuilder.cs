@@ -30,13 +30,34 @@ namespace RollOfLegends.EditorTools
         private const float CourtyardTop = -0.17f;  // top of the grass inside the loop
 
         private const float DiceSize = 1.3f;
-        private const float MarkerScale = 1.55f;    // size of swords, potions, traps and monsters on the tiles
-        private const float HeroScale = 0.62f;      // the capsule is 2 units tall at scale 1
+        private const float MarkerScale = 1.55f;    // size of the primitive-made snare marker
+        private const float HeroCenterHeight = 0.62f; // must match GameController's Hero Height
+
+        // 3D models: free CC0 packs by KayKit (kaylousberg.com) and Quaternius (quaternius.com).
+        // See Assets/_Project/Art/Models/CREDITS.md. Models face +Z; the camera looks toward +Z, so they are
+        // turned around to face the player.
+        private const string ModelsFolder = "Assets/_Project/Art/Models";
+
+        // The camera looks at the board from the START corner (turned 45 degrees), so START is at the bottom
+        // middle of the screen and the board looks like a diamond. Lower pitch = more from the side.
+        private const float CameraYaw = 45f;
+        private const float CameraPitch = 40f;
+        private const float ModelYaw = 180f + CameraYaw; // models face the camera
+        private static readonly string[] MonsterModels =
+        {
+            "GreenBlob", "Mushnub", "Ghost", "Goleling", "Dragon", "Demon", "Yeti", "Armabee",
+        };
+
+        // Animation clips to loop while standing still, in order of preference.
+        private static readonly string[] IdleClipNames =
+        {
+            "Idle", "CharacterArmature|Idle", "CharacterArmature|Flying_Idle",
+        };
 
         // Castles sit inside the loop on the diagonal toward each side's home corner (START and the opposite
-        // corner), far enough in that they don't hide tiles from the tilted camera.
-        private static readonly Vector2Int BaseCellPlayer = new Vector2Int(2, 2);
-        private static readonly Vector2Int BaseCellRival = new Vector2Int(TilesPerSide - 3, TilesPerSide - 3);
+        // corner), close enough to the middle that they don't hide the far tiles from the low camera.
+        private static readonly Vector2 BaseCellPlayer = new Vector2(2.2f, 2.2f);
+        private static readonly Vector2 BaseCellRival = new Vector2(TilesPerSide - 3.2f, TilesPerSide - 3.2f);
 
         [MenuItem("Roll of Legends/Rebuild Prototype Scene")]
         private static void BuildFromMenu()
@@ -58,15 +79,19 @@ namespace RollOfLegends.EditorTools
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             EnsureFolder(PrefabsFolder, "Effects");
             EnsureFolder(PrefabsFolder, "Fx");
+            EnsureFolder(MaterialsFolder, "Models");
 
             CreateLighting();
             CreateGroundAndBoardPlate();
             Board board = CreateBoard();
             DiceView dice = CreateDice();
-            Transform playerCastle = CreateCastle("PlayerBase", BaseCellPlayer, Palette.PlayerCastle, Palette.Player);
-            Transform rivalCastle = CreateCastle("RivalBase", BaseCellRival, Palette.RivalCastle, Palette.Rival);
-            Transform hero = CreateHero("Hero", Palette.Player, rival: false);
-            Transform rival = CreateHero("Rival", Palette.Rival, rival: true);
+            Transform playerCastle = CreateCastle("PlayerBase", BaseCellPlayer, "KayKit/Hexagon/building_castle_blue.fbx");
+            Transform rivalCastle = CreateCastle("RivalBase", BaseCellRival, "KayKit/Hexagon/building_castle_red.fbx");
+            // KayKit heroes come holding every weapon of their kit at once; keep one weapon and one shield.
+            Transform hero = CreateHero("Hero", "KayKit/Adventurers/Knight.glb",
+                "1H_Sword_Offhand", "2H_Sword", "Rectangle_Shield", "Round_Shield", "Spike_Shield");
+            Transform rival = CreateHero("Rival", "KayKit/Adventurers/Barbarian.glb",
+                "1H_Axe_Offhand", "2H_Axe", "Mug");
             BoardEffects effects = CreateBoardEffects(board);
             MoveHighlighter highlighter = CreateMoveHighlighter(board);
             CreatePostProcessing();
@@ -115,20 +140,8 @@ namespace RollOfLegends.EditorTools
             public static readonly Color RivalHomeBase = Hex("#9c3d35");
             public static readonly Color RivalHomeTop = Hex("#f4a097");
             public static readonly Color Label = Hex("#5b4a38");
-            public static readonly Color Player = Hex("#3d7bff");
-            public static readonly Color Rival = Hex("#ff5a4a");
-            public static readonly Color PlayerCastle = Hex("#6b8fd9");
-            public static readonly Color RivalCastle = Hex("#d9776b");
-            public static readonly Color Stone = Hex("#8a8f99");
-            public static readonly Color Gold = Hex("#ffcc33");
-            public static readonly Color Steel = Hex("#dfe7f0");
-            public static readonly Color Leather = Hex("#7a4a26");
-            public static readonly Color Potion = Hex("#49e07a");
             public static readonly Color Spikes = Hex("#a4adb8");
-            public static readonly Color DarkMetal = Hex("#4a4f57");
             public static readonly Color Snare = Hex("#6b4a2b");
-            public static readonly Color Monster = Hex("#9b59d0");
-            public static readonly Color Ivory = Hex("#f6ead0");
             public static readonly Color White = Hex("#f7f7f2");
             public static readonly Color Ink = Hex("#17171c");
         }
@@ -161,7 +174,7 @@ namespace RollOfLegends.EditorTools
             GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
             ground.transform.position = new Vector3(0f, BoardTop - 0.16f, 0f);
-            ground.transform.localScale = new Vector3(4f, 1f, 4f);
+            ground.transform.localScale = new Vector3(12f, 1f, 12f); // big enough to reach the horizon
             SetMaterial(ground, "Ground", Palette.Ground, smoothness: 0.1f);
 
             float plateSide = TilesPerSide * TileSpacing + 0.5f;
@@ -226,6 +239,11 @@ namespace RollOfLegends.EditorTools
 
         private static Vector3 CellToWorld(Vector2Int cell)
         {
+            return CellToWorld((Vector2)cell);
+        }
+
+        private static Vector3 CellToWorld(Vector2 cell)
+        {
             // Centre the board on the world origin.
             float offset = (TilesPerSide - 1) / 2f;
             return new Vector3((cell.x - offset) * TileSpacing, 0f, (cell.y - offset) * TileSpacing);
@@ -241,8 +259,9 @@ namespace RollOfLegends.EditorTools
 
             const float unitsPerWorldUnit = 200f;
             var rect = label.GetComponent<RectTransform>();
-            rect.localPosition = new Vector3(0f, 0.01f, -TileSize * 0.33f);
-            rect.localRotation = Quaternion.Euler(90f, 0f, 0f); // lie flat, readable from the camera
+            // Lie flat on the edge nearest the camera, turned so the text reads upright from the camera.
+            rect.localPosition = Quaternion.Euler(0f, CameraYaw, 0f) * new Vector3(0f, 0.01f, -TileSize * 0.33f);
+            rect.localRotation = Quaternion.Euler(90f, CameraYaw, 0f);
             rect.localScale = Vector3.one / unitsPerWorldUnit;
             rect.sizeDelta = new Vector2(TileSize, TileSize * 0.34f) * unitsPerWorldUnit;
 
@@ -300,71 +319,157 @@ namespace RollOfLegends.EditorTools
             }
         }
 
-        /// <summary>A cute capsule hero with big eyes. The player wears a crown, the rival has horns.</summary>
-        private static Transform CreateHero(string name, Color color, bool rival)
+        /// <summary>
+        /// An animated hero model standing on its tile. The root sits at the hero's middle (where
+        /// GameController places it); the model's feet are moved down to the tile surface.
+        /// </summary>
+        private static Transform CreateHero(string name, string model, params string[] hiddenParts)
         {
             // The GameController places it on its home tile when the game starts.
             var hero = new GameObject(name);
-            SetMaterial(Part(hero, PrimitiveType.Capsule, "Body", Vector3.zero, Vector3.one * HeroScale), name, color, smoothness: 0.55f);
-
-            float front = -HeroScale * 0.45f; // eyes look toward the camera (-z)
-            foreach (float side in new[] { -1f, 1f })
-            {
-                Vector3 eye = new Vector3(side * 0.12f, 0.22f, front);
-                SetMaterial(Part(hero, PrimitiveType.Sphere, "Eye", eye, Vector3.one * 0.16f), "Eye", Palette.White, smoothness: 0.8f);
-                SetMaterial(Part(hero, PrimitiveType.Sphere, "Pupil", eye + new Vector3(0f, -0.01f, -0.06f), Vector3.one * 0.08f), "Pip", Palette.Ink, smoothness: 0.8f);
-            }
-
-            if (rival)
-            {
-                foreach (float side in new[] { -1f, 1f })
-                {
-                    GameObject horn = Part(hero, PrimitiveType.Cylinder, "Horn", new Vector3(side * 0.16f, 0.66f, 0f), new Vector3(0.09f, 0.12f, 0.09f));
-                    horn.transform.localRotation = Quaternion.Euler(0f, 0f, -side * 25f);
-                    SetMaterial(horn, "Horn", Palette.Ivory, smoothness: 0.4f);
-                }
-            }
-            else
-            {
-                SetMaterial(Part(hero, PrimitiveType.Cylinder, "Crown", new Vector3(0f, 0.66f, 0f), new Vector3(0.36f, 0.07f, 0.36f)), "Gold", Palette.Gold, smoothness: 0.85f);
-                for (int i = 0; i < 5; i++)
-                {
-                    Vector3 point = Quaternion.Euler(0f, i * 72f, 0f) * new Vector3(0f, 0.76f, 0.15f);
-                    SetMaterial(Part(hero, PrimitiveType.Cube, "CrownPoint", point, new Vector3(0.07f, 0.12f, 0.07f)), "Gold", Palette.Gold, smoothness: 0.85f);
-                }
-            }
-
+            GameObject body = PlaceModel(hero, model, height: 1.85f, hiddenParts: hiddenParts);
+            body.transform.localPosition = new Vector3(0f, -HeroCenterHeight, 0f);
             return hero.transform;
         }
 
-        /// <summary>A small castle in the team's color: walls, four corner towers, a keep and a flag.</summary>
-        private static Transform CreateCastle(string name, Vector2Int cell, Color wallColor, Color flagColor)
+        private static Transform CreateCastle(string name, Vector2 cell, string model)
         {
             var castle = new GameObject(name);
             castle.transform.position = CellToWorld(cell) + new Vector3(0f, CourtyardTop, 0f);
-
-            SetMaterial(Part(castle, PrimitiveType.Cube, "Walls", new Vector3(0f, 0.3f, 0f), new Vector3(1.2f, 0.6f, 1.2f)), name, wallColor, smoothness: 0.15f);
-            foreach (Vector2 corner in new[] { new Vector2(-1, -1), new Vector2(-1, 1), new Vector2(1, -1), new Vector2(1, 1) })
-            {
-                Vector3 position = new Vector3(corner.x * 0.6f, 0.4f, corner.y * 0.6f);
-                SetMaterial(Part(castle, PrimitiveType.Cylinder, "Tower", position, new Vector3(0.36f, 0.4f, 0.36f)), "Stone", Palette.Stone, smoothness: 0.15f);
-            }
-            SetMaterial(Part(castle, PrimitiveType.Cylinder, "Keep", new Vector3(0f, 0.85f, 0f), new Vector3(0.55f, 0.3f, 0.55f)), name, wallColor, smoothness: 0.15f);
-            SetMaterial(Part(castle, PrimitiveType.Cylinder, "Pole", new Vector3(0f, 1.4f, 0f), new Vector3(0.04f, 0.28f, 0.04f)), "Stone", Palette.Stone);
-            SetMaterial(Part(castle, PrimitiveType.Cube, "Flag", new Vector3(0.17f, 1.55f, 0f), new Vector3(0.32f, 0.2f, 0.03f)), name + "Flag", flagColor, smoothness: 0.3f);
+            PlaceModel(castle, model, width: 1.6f, height: 2.2f);
             return castle.transform;
         }
 
+        /// <summary>
+        /// Adds a model (FBX or GLB, path relative to the Models folder) as a child, turned to face the
+        /// camera and scaled to fit the given height and/or footprint width. If the model has an idle
+        /// animation it is set to loop. The model stays linked to its file, so updated models flow in.
+        /// </summary>
+        private static GameObject PlaceModel(GameObject parent, string model, float height = 0f, float width = 0f, string[] hiddenParts = null)
+        {
+            string path = $"{ModelsFolder}/{model}";
+            var asset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (asset == null) throw new System.IO.FileNotFoundException($"Model not found (GLB files need glTFast): {path}");
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(asset);
+            instance.transform.SetParent(parent.transform, false);
+            instance.transform.localRotation = Quaternion.Euler(0f, ModelYaw, 0f);
+
+            foreach (Transform part in instance.GetComponentsInChildren<Transform>(true))
+            {
+                if (hiddenParts != null && System.Array.IndexOf(hiddenParts, part.name) >= 0) part.gameObject.SetActive(false);
+            }
+
+            // Pose the model in its idle animation first, so it is measured the way it will look.
+            AnimationClip idle = FindIdleClip(path);
+            if (idle != null)
+            {
+                idle.SampleAnimation(instance, 0f);
+                instance.AddComponent<ModelAnimator>().Clip = idle;
+            }
+
+            Bounds bounds = ModelBounds(instance);
+            float scale = float.MaxValue;
+            if (height > 0f) scale = Mathf.Min(scale, height / bounds.size.y);
+            if (width > 0f) scale = Mathf.Min(scale, width / Mathf.Max(bounds.size.x, bounds.size.z));
+            instance.transform.localScale = Vector3.one * scale;
+
+            UseProjectMaterials(instance);
+            return instance;
+        }
+
+        private static AnimationClip FindIdleClip(string modelPath)
+        {
+            var clips = new System.Collections.Generic.Dictionary<string, AnimationClip>();
+            foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(modelPath))
+            {
+                if (asset is AnimationClip clip && !clip.name.StartsWith("__preview")) clips[clip.name] = clip;
+            }
+            foreach (string name in IdleClipNames)
+            {
+                if (clips.TryGetValue(name, out AnimationClip clip)) return clip;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Swaps glTF materials (from .glb models) for this project's URP Lit materials with the same
+        /// texture and color. The glTF shader multiplies by vertex colors, which these models don't have;
+        /// on some graphics drivers that turns everything black. FBX models already use URP Lit.
+        /// </summary>
+        private static void UseProjectMaterials(GameObject model)
+        {
+            foreach (Renderer part in model.GetComponentsInChildren<Renderer>(true))
+            {
+                Material[] materials = part.sharedMaterials;
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    Material source = materials[i];
+                    if (source == null || !source.shader.name.Contains("glTF")) continue;
+
+                    Color color = source.GetColor("baseColorFactor");
+                    var texture = source.GetTexture("baseColorTexture") as Texture2D;
+                    string name = texture != null ? $"Models/{texture.name}" : $"Models/Color_{ColorUtility.ToHtmlStringRGB(color)}";
+                    Material material = GetOrCreateMaterial(name, color, smoothness: 0.2f);
+                    if (texture != null && material.GetTexture("_BaseMap") == null)
+                    {
+                        material.SetTexture("_BaseMap", texture);
+                        EditorUtility.SetDirty(material);
+                    }
+                    materials[i] = material;
+                }
+                part.sharedMaterials = materials;
+            }
+        }
+
+        private static Bounds ModelBounds(GameObject model)
+        {
+            Renderer[] renderers = model.GetComponentsInChildren<Renderer>();
+            Bounds bounds = renderers[0].bounds;
+            foreach (Renderer part in renderers) bounds.Encapsulate(part.bounds);
+            return bounds;
+        }
+
+        /// <summary>Every tile effect, how many of it a game starts with, and the prefab(s) that show it.</summary>
         private static BoardEffects CreateBoardEffects(Board board)
         {
+            var monsters = new GameObject[MonsterModels.Length];
+            for (int i = 0; i < MonsterModels.Length; i++)
+            {
+                monsters[i] = SavePrefab(BuildMonster(MonsterModels[i]), "Effects");
+            }
+
+            var setups = new (TileEffect effect, int count, GameObject[] prefabs)[]
+            {
+                (TileEffect.Sword, 2, new[] { SavePrefab(BuildSword(), "Effects") }),
+                (TileEffect.HealthPotion, 2, new[] { SavePrefab(BuildHealthPotion(), "Effects") }),
+                (TileEffect.RepairElixir, 2, new[] { SavePrefab(BuildRepairElixir(), "Effects") }),
+                (TileEffect.Shield, 1, new[] { SavePrefab(BuildShield(), "Effects") }),
+                (TileEffect.SpellBook, 2, new[] { SavePrefab(BuildSpellBook(), "Effects") }),
+                (TileEffect.Chest, 1, new[] { SavePrefab(BuildChest(), "Effects") }),
+                (TileEffect.Spikes, 2, new[] { SavePrefab(BuildSpikes(), "Effects") }),
+                (TileEffect.Snare, 1, new[] { SavePrefab(BuildSnare(), "Effects") }),
+                (TileEffect.Forest, 2, new[] { SavePrefab(BuildForest(), "Effects") }),
+                (TileEffect.Monster, 3, monsters),
+            };
+
             var effects = board.gameObject.AddComponent<BoardEffects>();
             var serialized = new SerializedObject(effects);
             Set(serialized, "_board", board);
-            Set(serialized, "_swordPrefab", SavePrefab(BuildSword(), "Effects"));
-            Set(serialized, "_potionPrefab", SavePrefab(BuildPotion(), "Effects"));
-            Set(serialized, "_spikesPrefab", SavePrefab(BuildSpikes(), "Effects"));
-            Set(serialized, "_snarePrefab", SavePrefab(BuildSnare(), "Effects"));
-            Set(serialized, "_monsterPrefab", SavePrefab(BuildMonster(), "Effects"));
+            SerializedProperty list = serialized.FindProperty("_setups");
+            list.arraySize = setups.Length;
+            for (int i = 0; i < setups.Length; i++)
+            {
+                SerializedProperty entry = list.GetArrayElementAtIndex(i);
+                entry.FindPropertyRelative("Effect").intValue = (int)setups[i].effect;
+                entry.FindPropertyRelative("Count").intValue = setups[i].count;
+                SerializedProperty prefabs = entry.FindPropertyRelative("Prefabs");
+                prefabs.arraySize = setups[i].prefabs.Length;
+                for (int j = 0; j < setups[i].prefabs.Length; j++)
+                {
+                    prefabs.GetArrayElementAtIndex(j).objectReferenceValue = setups[i].prefabs[j];
+                }
+            }
             serialized.ApplyModifiedPropertiesWithoutUndo();
             return effects;
         }
@@ -394,44 +499,89 @@ namespace RollOfLegends.EditorTools
         private static GameObject BuildSword()
         {
             var root = new GameObject("Sword");
-            var sword = new GameObject("Model");
-            sword.transform.SetParent(root.transform, false);
-            SetMaterial(Part(sword, PrimitiveType.Cube, "Blade", new Vector3(0f, 0.5f, 0f), new Vector3(0.11f, 0.5f, 0.03f)), "Steel", Palette.Steel, smoothness: 0.9f);
-            GameObject tip = Part(sword, PrimitiveType.Cube, "Tip", new Vector3(0f, 0.75f, 0f), new Vector3(0.078f, 0.078f, 0.03f));
-            tip.transform.localRotation = Quaternion.Euler(0f, 0f, 45f);
-            SetMaterial(tip, "Steel", Palette.Steel, smoothness: 0.9f);
-            SetMaterial(Part(sword, PrimitiveType.Cube, "Guard", new Vector3(0f, 0.24f, 0f), new Vector3(0.34f, 0.06f, 0.07f)), "Gold", Palette.Gold, smoothness: 0.85f);
-            SetMaterial(Part(sword, PrimitiveType.Cube, "Grip", new Vector3(0f, 0.13f, 0f), new Vector3(0.06f, 0.16f, 0.06f)), "Leather", Palette.Leather);
-            SetMaterial(Part(sword, PrimitiveType.Sphere, "Pommel", new Vector3(0f, 0.04f, 0f), Vector3.one * 0.08f), "Gold", Palette.Gold, smoothness: 0.85f);
-            Idle(sword, spin: 90f, bob: 0.05f);
-            return Scaled(root);
+            GameObject sword = PlaceModel(root, "KayKit/Adventurers/sword_1handed.fbx", height: 1.25f);
+            sword.transform.localPosition = new Vector3(0f, 0.15f, 0f);
+            Idle(sword, spin: 90f, bob: 0.06f);
+            return root;
         }
 
-        private static GameObject BuildPotion()
+        private static GameObject BuildHealthPotion()
         {
-            var root = new GameObject("Potion");
-            var potion = new GameObject("Model");
-            potion.transform.SetParent(root.transform, false);
-            SetMaterial(Part(potion, PrimitiveType.Sphere, "Bottle", new Vector3(0f, 0.2f, 0f), Vector3.one * 0.36f), "Potion", Palette.Potion, smoothness: 0.9f);
-            SetMaterial(Part(potion, PrimitiveType.Sphere, "Shine", new Vector3(-0.08f, 0.27f, -0.13f), Vector3.one * 0.07f), "Eye", Palette.White, smoothness: 0.9f);
-            SetMaterial(Part(potion, PrimitiveType.Cylinder, "Neck", new Vector3(0f, 0.43f, 0f), new Vector3(0.12f, 0.08f, 0.12f)), "Potion", Palette.Potion, smoothness: 0.9f);
-            SetMaterial(Part(potion, PrimitiveType.Cylinder, "Cork", new Vector3(0f, 0.53f, 0f), new Vector3(0.1f, 0.03f, 0.1f)), "Leather", Palette.Leather);
+            var root = new GameObject("HealthPotion");
+            GameObject potion = PlaceModel(root, "KayKit/Dungeon/bottle_A_labeled_green.fbx", height: 1.05f);
             Idle(potion, spin: 60f, bob: 0.05f);
-            return Scaled(root);
+            return root;
+        }
+
+        /// <summary>The same bottle tinted blue, so it reads clearly as a different potion (repairs your base).</summary>
+        private static GameObject BuildRepairElixir()
+        {
+            var root = new GameObject("RepairElixir");
+            GameObject bottle = PlaceModel(root, "KayKit/Dungeon/bottle_A_labeled_green.fbx", height: 1.05f);
+            Renderer renderer = bottle.GetComponentInChildren<Renderer>();
+            Material blue = GetOrCreateMaterial("RepairElixir", new Color(0.55f, 0.8f, 2.2f), smoothness: 0.5f);
+            blue.SetTexture("_BaseMap", renderer.sharedMaterial.GetTexture("_BaseMap"));
+            EditorUtility.SetDirty(blue);
+            renderer.sharedMaterial = blue;
+            Idle(bottle, spin: -60f, bob: 0.05f);
+            return root;
+        }
+
+        private static GameObject BuildShield()
+        {
+            var root = new GameObject("Shield");
+            GameObject shield = PlaceModel(root, "KayKit/Adventurers/shield_round.fbx", height: 0.9f);
+            shield.transform.localPosition = new Vector3(0f, 0.55f, 0f);
+            Idle(shield, spin: 70f, bob: 0.06f);
+            return root;
+        }
+
+        private static GameObject BuildChest()
+        {
+            var root = new GameObject("Chest");
+            PlaceModel(root, "KayKit/Dungeon/chest_gold.fbx", width: 0.95f);
+            return root;
+        }
+
+        /// <summary>A floating purple spell book with golden corners (made from primitives).</summary>
+        private static GameObject BuildSpellBook()
+        {
+            var root = new GameObject("SpellBook");
+            var book = new GameObject("Book");
+            book.transform.SetParent(root.transform, false);
+            book.transform.localPosition = new Vector3(0f, 0.55f, 0f);
+            book.transform.localRotation = Quaternion.Euler(-20f, 0f, 0f);
+            SetMaterial(Part(book, PrimitiveType.Cube, "Cover", Vector3.zero, new Vector3(0.62f, 0.14f, 0.48f)), "BookCover", Hex("#6a3fb8"), smoothness: 0.4f);
+            SetMaterial(Part(book, PrimitiveType.Cube, "Pages", new Vector3(0.03f, 0f, 0f), new Vector3(0.6f, 0.1f, 0.44f)), "BookPages", Hex("#f6ead0"));
+            foreach (Vector2 corner in new[] { new Vector2(-1, -1), new Vector2(-1, 1), new Vector2(1, -1), new Vector2(1, 1) })
+            {
+                Vector3 position = new Vector3(corner.x * 0.27f, 0.075f, corner.y * 0.2f);
+                SetMaterial(Part(book, PrimitiveType.Cube, "Corner", position, new Vector3(0.09f, 0.02f, 0.09f)), "Gold", Hex("#ffcc33"), smoothness: 0.85f);
+            }
+            SetMaterial(Part(book, PrimitiveType.Sphere, "Gem", new Vector3(0f, 0.08f, 0f), new Vector3(0.12f, 0.04f, 0.12f)), "Gem", Hex("#7fe7ff"), smoothness: 0.95f);
+            Idle(book, spin: 45f, bob: 0.07f);
+            return root;
+        }
+
+        /// <summary>A little cluster of round trees (made from primitives): rolls are lower after landing here.</summary>
+        private static GameObject BuildForest()
+        {
+            var root = new GameObject("Forest");
+            var trees = new[] { (new Vector3(-0.25f, 0f, 0.15f), 1f), (new Vector3(0.22f, 0f, 0.2f), 0.85f), (new Vector3(0.02f, 0f, -0.22f), 0.75f) };
+            foreach ((Vector3 position, float size) in trees)
+            {
+                SetMaterial(Part(root, PrimitiveType.Cylinder, "Trunk", position + new Vector3(0f, 0.2f * size, 0f), new Vector3(0.12f, 0.2f, 0.12f) * size), "Bark", Hex("#7a4a26"));
+                SetMaterial(Part(root, PrimitiveType.Sphere, "Leaves", position + new Vector3(0f, 0.55f * size, 0f), Vector3.one * 0.5f * size), "Leaves", Hex("#3f9b45"), smoothness: 0.15f);
+                SetMaterial(Part(root, PrimitiveType.Sphere, "LeavesTop", position + new Vector3(0f, 0.85f * size, 0f), Vector3.one * 0.34f * size), "LeavesLight", Hex("#6cc957"), smoothness: 0.15f);
+            }
+            return root;
         }
 
         private static GameObject BuildSpikes()
         {
             var root = new GameObject("Spikes");
-            SetMaterial(Part(root, PrimitiveType.Cylinder, "Plate", new Vector3(0f, 0.01f, 0f), new Vector3(0.58f, 0.01f, 0.58f)), "DarkMetal", Palette.DarkMetal, smoothness: 0.4f);
-            for (int i = 0; i < 5; i++)
-            {
-                Vector3 position = i == 0 ? Vector3.zero : Quaternion.Euler(0f, 45f + i * 90f, 0f) * new Vector3(0f, 0f, 0.17f);
-                GameObject spike = Part(root, PrimitiveType.Cube, "Spike", position + new Vector3(0f, 0.15f, 0f), new Vector3(0.07f, 0.3f, 0.07f));
-                spike.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
-                SetMaterial(spike, "Spikes", Palette.Spikes, smoothness: 0.8f);
-            }
-            return Scaled(root);
+            PlaceModel(root, "KayKit/Dungeon/floor_tile_big_spikes.fbx", width: 1.0f);
+            return root;
         }
 
         private static GameObject BuildSnare()
@@ -448,23 +598,13 @@ namespace RollOfLegends.EditorTools
             return Scaled(root);
         }
 
-        private static GameObject BuildMonster()
+        /// <summary>One prefab per monster model; BoardEffects picks one at random for each monster tile.</summary>
+        private static GameObject BuildMonster(string model)
         {
-            var root = new GameObject("Monster");
-            var monster = new GameObject("Model");
-            monster.transform.SetParent(root.transform, false);
-            SetMaterial(Part(monster, PrimitiveType.Capsule, "Body", new Vector3(0f, 0.35f, 0f), new Vector3(0.45f, 0.35f, 0.45f)), "Monster", Palette.Monster, smoothness: 0.5f);
-            foreach (float x in new[] { -0.09f, 0.09f })
-            {
-                // Eyes look toward the camera (-z).
-                SetMaterial(Part(monster, PrimitiveType.Sphere, "Eye", new Vector3(x, 0.5f, -0.18f), Vector3.one * 0.12f), "Eye", Palette.White, smoothness: 0.8f);
-                SetMaterial(Part(monster, PrimitiveType.Sphere, "Pupil", new Vector3(x, 0.49f, -0.23f), Vector3.one * 0.06f), "Pip", Palette.Ink, smoothness: 0.8f);
-                GameObject horn = Part(monster, PrimitiveType.Cube, "Horn", new Vector3(x * 1.4f, 0.72f, 0f), new Vector3(0.05f, 0.12f, 0.05f));
-                horn.transform.localRotation = Quaternion.Euler(0f, 0f, -Mathf.Sign(x) * 20f);
-                SetMaterial(horn, "Horn", Palette.Ivory, smoothness: 0.4f);
-            }
-            Idle(monster, spin: 0f, bob: 0.04f);
-            return Scaled(root);
+            var root = new GameObject($"Monster_{model}");
+            // Winged monsters are wide; letting them spread a bit past their tile keeps them from looking tiny.
+            PlaceModel(root, $"Quaternius/Monsters/{model}.fbx", height: 1.5f, width: 2.0f);
+            return root;
         }
 
         /// <summary>Glowing frame around a tile plus the step count, shown for each possible landing tile.</summary>
@@ -486,11 +626,13 @@ namespace RollOfLegends.EditorTools
             label.transform.SetParent(root.transform, false);
             label.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
             var rect = label.GetComponent<RectTransform>();
-            rect.localPosition = new Vector3(0f, 0.8f, -0.3f); // low and toward the camera, so it reads as "this tile"
+            // Low and toward the camera, so it reads as "this tile".
+            rect.localPosition = Quaternion.Euler(0f, CameraYaw, 0f) * new Vector3(0f, 0.9f, -0.3f);
             rect.localScale = Vector3.one * 0.006f;
-            rect.sizeDelta = new Vector2(160f, 140f);
+            rect.sizeDelta = new Vector2(420f, 240f);
             Text steps = CreateText(label.transform, "Text", "3", 110, TextAnchor.MiddleCenter);
             steps.fontStyle = FontStyle.Bold;
+            steps.horizontalOverflow = HorizontalWrapMode.Overflow; // never split a word like "Monster"
             Outline outline = steps.gameObject.AddComponent<Outline>();
             outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
             outline.effectDistance = new Vector2(5f, -5f);
@@ -562,7 +704,7 @@ namespace RollOfLegends.EditorTools
             data.antialiasing = AntialiasingMode.FastApproximateAntialiasing;
 
             // Fixed viewing angle; CameraFit only slides the camera, it never turns it.
-            cameraObject.transform.rotation = Quaternion.Euler(58f, 0f, 0f);
+            cameraObject.transform.rotation = Quaternion.Euler(CameraPitch, CameraYaw, 0f);
             cameraObject.transform.position = -cameraObject.transform.forward * 25f;
 
             var fit = cameraObject.AddComponent<CameraFit>();
