@@ -21,6 +21,12 @@ namespace RollOfLegends
         [Tooltip("Extra gap between the board and the UI, as a fraction of the screen.")]
         [SerializeField] private float _uiGap = 0.01f;
 
+        [Tooltip("Fog starts this far behind the board.")]
+        [SerializeField] private float _fogGap = 2f;
+
+        [Tooltip("How far it takes the fog to fully hide things.")]
+        [SerializeField] private float _fogLength = 40f;
+
         private Camera _camera;
         private Vector2Int _fittedSize;
         private float _fittedAspect;
@@ -71,6 +77,14 @@ namespace RollOfLegends
             TryFit(corners, far, out Vector2 shift);
             // Keeping the angle fixed: move back by the distance, then slide sideways/up to center in the safe area.
             transform.position = bounds.center - transform.forward * far - transform.right * shift.x - transform.up * shift.y;
+
+            // Fog (if on) starts just behind the board, so the board is never hazy but far mountains fade into the sky.
+            if (RenderSettings.fog)
+            {
+                float boardBack = Vector3.Distance(transform.position, bounds.center) + bounds.extents.magnitude;
+                RenderSettings.fogStartDistance = boardBack + _fogGap;
+                RenderSettings.fogEndDistance = boardBack + _fogGap + _fogLength;
+            }
         }
 
         /// <summary>

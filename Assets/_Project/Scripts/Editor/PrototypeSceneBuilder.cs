@@ -86,6 +86,7 @@ namespace RollOfLegends.EditorTools
 
             CreateLighting();
             CreateGroundAndBoardPlate();
+            CreateScenery();
             Board board = CreateBoard();
             DiceView dice = CreateDice();
             Transform playerCastle = CreateCastle("PlayerBase", BaseCellPlayer, "KayKit/Hexagon/building_castle_blue.fbx");
@@ -135,7 +136,6 @@ namespace RollOfLegends.EditorTools
         private static class Palette
         {
             public static readonly Color Sky = Hex("#1c2541");
-            public static readonly Color Ground = Hex("#22392f");
             public static readonly Color Wood = Hex("#6e4a2a");
             public static readonly Color Grass = Hex("#7fae5b");
             public static readonly Color TileBase = Hex("#b5a283");
@@ -178,9 +178,9 @@ namespace RollOfLegends.EditorTools
         {
             GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
-            ground.transform.position = new Vector3(0f, BoardTop - 0.16f, 0f);
+            ground.transform.position = new Vector3(0f, BoardTop - 0.7f, 0f); // below the grass hexagons; only seen past them
             ground.transform.localScale = new Vector3(12f, 1f, 12f); // big enough to reach the horizon
-            SetMaterial(ground, "Ground", Palette.Ground, smoothness: 0.1f);
+            SetMaterial(ground, "Sea", SeaColor, smoothness: 0.75f); // the hexagon island floats in a calm sea (see Scenery)
 
             float plateSide = TilesPerSide * TileSpacing + 0.5f;
             GameObject plate = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -781,7 +781,7 @@ namespace RollOfLegends.EditorTools
         {
             var cameraObject = new GameObject("Main Camera") { tag = "MainCamera" };
             var camera = cameraObject.AddComponent<Camera>();
-            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.clearFlags = CameraClearFlags.Skybox; // the gradient sky (see Scenery)
             camera.backgroundColor = Palette.Sky;
             camera.fieldOfView = 38f; // narrower lens = less distortion, so far tiles look as big as near ones
             cameraObject.AddComponent<AudioListener>();

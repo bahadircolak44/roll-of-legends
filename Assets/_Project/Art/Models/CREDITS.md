@@ -19,4 +19,7 @@ the full packs have many more models (more heroes, skeletons, props, buildings, 
 - **Bases:** `building_castle_blue.fbx` (you), `building_castle_red.fbx` (rival).
 - **Tile effects:** `sword_1handed.fbx` (sword), `bottle_A_labeled_green.fbx` (potion), `floor_tile_big_spikes.fbx` (spikes),
   8 Quaternius monsters picked at random for monster tiles (each loops its idle animation).
+- **Scenery** (`KayKit/Hexagon/Nature`, `Tiles`, `Buildings`, placed by `PrototypeSceneBuilder.Scenery.cs`): grass/water hex tiles,
+  mountains, hills, trees, rocks, clouds, water plants, and blue/red houses, wells and windmills.
+  `hexagons_medieval_green.png` is our edit of the pack's atlas (yellow-lime grass cell recolored green) used only by the scenery.
 - **Not used yet (ideas):** `shield_round.fbx`, `shield_badge.fbx`, `sword_shield.fbx` (armor/defense), `chest_gold.fbx`, `coin_stack_small.fbx` (treasure).
