@@ -73,11 +73,12 @@ namespace RollOfLegends.Tests
             Assert.IsNull(GameObject.Find("Hero"), "Hero should be hidden until PLAY");
             Assert.IsNull(GameObject.Find("Dice"), "Dice should be hidden until the first roll");
             Assert.IsNotNull(GameObject.Find("PlayButton"));
-            Assert.IsNull(GameObject.Find("RollDiceButton"));
+            Assert.IsNull(GameObject.Find("Card_0"), "Cards are dealt on PLAY");
+            Assert.IsNull(GameObject.Find("RollDiceButton"), "The ROLL DICE button was replaced by cards");
         }
 
         [Test]
-        public void PlayButton_PutsHeroOnStartTile()
+        public void PlayButton_PutsHeroOnStartAndDealsThreeCards()
         {
             Click("PlayButton");
 
@@ -86,24 +87,34 @@ namespace RollOfLegends.Tests
             Assert.AreEqual(0, _controller.HeroTileIndex);
             AssertHeroStandsOn(hero, 0);
             Assert.IsNull(GameObject.Find("PlayButton"));
-            Assert.IsNotNull(GameObject.Find("RollDiceButton"));
             StringAssert.Contains("Position: START", InfoText());
+
+            Assert.AreEqual(3, _controller.Hand.Count);
+            for (int slot = 0; slot < 3; slot++)
+            {
+                Assert.IsNotNull(GameObject.Find($"Card_{slot}"), $"Card {slot} should be shown");
+                Assert.IsNotEmpty(CardLabel(slot));
+            }
         }
 
         [UnityTest]
-        public IEnumerator RollDice_DieShowsRolledNumberAndHeroHopsThere()
+        public IEnumerator PlayingACard_RollsItsDiceMovesHeroAndDrawsANewCard()
         {
             Click("PlayButton");
             GameObject hero = GameObject.Find("Hero");
-            Button rollButton = GameObject.Find("RollDiceButton").GetComponent<Button>();
             float highestHeroY = hero.transform.position.y;
 
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; i < 12; i++)
             {
+                int slot = i % 3;
                 int before = _controller.HeroTileIndex;
-                rollButton.onClick.Invoke();
+                DiceCard played = _controller.Hand[slot];
+                Button otherCard = CardButton((slot + 1) % 3);
+
+                Click($"Card_{slot}");
                 Assert.IsTrue(_controller.IsRolling);
-                Assert.IsFalse(rollButton.interactable, "ROLL DICE should be disabled while moving");
+                Assert.IsNull(GameObject.Find($"Card_{slot}"), "The played card should leave the hand");
+                Assert.IsFalse(otherCard.interactable, "Cards should be disabled while moving");
 
                 while (_controller.IsRolling)
                 {
@@ -111,14 +122,18 @@ namespace RollOfLegends.Tests
                     yield return null;
                 }
 
+                AssertRollMatchesCard(played, _controller.LastRoll);
                 int expected = (before + _controller.LastRoll) % _board.TileCount;
                 Assert.AreEqual(expected, _controller.HeroTileIndex);
                 AssertHeroStandsOn(hero, expected);
                 Assert.AreEqual(_controller.LastRoll, _dice.TopValue(), "The die should land showing the rolled number");
-                Assert.IsTrue(rollButton.interactable);
+
+                Assert.IsNotNull(GameObject.Find($"Card_{slot}"), "A new card should fill the empty slot");
+                Assert.AreEqual(3, _controller.Hand.Count);
+                Assert.IsTrue(otherCard.interactable);
 
                 string info = InfoText();
-                StringAssert.Contains($"Dice: {_controller.LastDiceType}", info);
+                StringAssert.Contains($"Card: {played.Describe()}", info);
                 StringAssert.Contains($"Rolled: {_controller.LastRoll}", info);
                 StringAssert.Contains(expected == 0 ? "Position: START" : $"Position: Tile {expected}", info);
             }
@@ -128,11 +143,12 @@ namespace RollOfLegends.Tests
         }
 
         [UnityTest]
-        public IEnumerator RollDice_IgnoresExtraTapsWhileMoving()
+        public IEnumerator PlayingCards_IgnoresExtraTapsWhileMoving()
         {
             Click("PlayButton");
-            Click("RollDiceButton");
-            Click("RollDiceButton"); // second tap while the first roll is still running
+            DiceCard secondCard = _controller.Hand[1];
+            Click("Card_0");
+            CardButton(1).onClick.Invoke(); // second tap while the first move is still running
 
             while (_controller.IsRolling)
             {
@@ -140,6 +156,7 @@ namespace RollOfLegends.Tests
             }
 
             Assert.AreEqual(_controller.LastRoll % _board.TileCount, _controller.HeroTileIndex);
+            Assert.AreEqual(secondCard, _controller.Hand[1], "The second card should still be in the hand");
         }
 
         [TestCase(9f / 19.5f)] // portrait phone
@@ -151,10 +168,11 @@ namespace RollOfLegends.Tests
             camera.aspect = aspect;
             camera.GetComponent<CameraFit>().Fit();
 
+            var fit = camera.GetComponent<CameraFit>();
             foreach (Renderer tile in _board.GetComponentsInChildren<Renderer>())
             {
-                AssertInView(camera, tile.bounds.min);
-                AssertInView(camera, tile.bounds.max);
+                AssertInView(camera, tile.bounds.min, fit);
+                AssertInView(camera, tile.bounds.max, fit);
             }
 
             camera.ResetAspect();
@@ -163,6 +181,27 @@ namespace RollOfLegends.Tests
         private static void Click(string buttonName)
         {
             GameObject.Find(buttonName).GetComponent<Button>().onClick.Invoke();
+        }
+
+        private static Button CardButton(int slot)
+        {
+            return GameObject.Find($"Card_{slot}").GetComponent<Button>();
+        }
+
+        private static string CardLabel(int slot)
+        {
+            return GameObject.Find($"Card_{slot}").GetComponentInChildren<Text>().text;
+        }
+
+        private static void AssertRollMatchesCard(DiceCard card, int roll)
+        {
+            switch (card.Type)
+            {
+                case DiceType.Odd: CollectionAssert.Contains(new[] { 1, 3, 5 }, roll); break;
+                case DiceType.Even: CollectionAssert.Contains(new[] { 2, 4, 6 }, roll); break;
+                case DiceType.Fixed: Assert.AreEqual(card.FixedValue, roll); break;
+                default: Assert.That(roll, Is.InRange(1, 6)); break;
+            }
         }
 
         private static string InfoText()
@@ -178,11 +217,12 @@ namespace RollOfLegends.Tests
             Assert.Greater(hero.transform.position.y, tile.y);
         }
 
-        private static void AssertInView(Camera camera, Vector3 worldPoint)
+        private static void AssertInView(Camera camera, Vector3 worldPoint, CameraFit fit)
         {
+            // The board must stay between the info panel (top) and the cards (bottom).
             Vector3 viewport = camera.WorldToViewportPoint(worldPoint);
             Assert.That(viewport.x, Is.InRange(0f, 1f), $"{worldPoint} is off-screen horizontally");
-            Assert.That(viewport.y, Is.InRange(0f, 1f), $"{worldPoint} is off-screen vertically");
+            Assert.That(viewport.y, Is.InRange(fit.BottomMargin, 1f - fit.TopMargin), $"{worldPoint} is under the UI");
             Assert.Greater(viewport.z, 0f, $"{worldPoint} is behind the camera");
         }
     }

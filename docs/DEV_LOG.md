@@ -11,10 +11,11 @@ _Last updated: 2026-10-16_
 - Unity 6.3 LTS project (URP, Universal 3D template) targeting Android: IL2CPP, ARM64, bundle id `com.rolloflegends.game`, version 0.1.0.
 - Playable prototype in `Assets/_Project/Scenes/Main.unity`:
   - Square 8x8 board edge = 28 tiles (corners shared), numbered clockwise from START (bottom-left corner, tile 1 is directly above it).
-  - **PLAY** shows the blue capsule hero on START. **ROLL DICE** picks a random dice type (Odd / Even / Fixed / Random); a white 3D die (pips made of spheres) drops into the board center spinning and lands with the rolled number on top; then the hero hops tile by tile, wrapping around the loop. ROLL DICE is disabled while moving.
-  - Info panel shows dice type, rolled value and hero position (updates on every hop).
-  - Fixed camera angle; `CameraFit` adjusts only the distance so the whole board fits any aspect ratio (portrait, landscape, Editor).
-- 21 PlayMode tests pass: dice rules, loop shape + clockwise order, die lands on rolled face, hero hops, double-tap guard, camera framing at 3 aspect ratios.
+  - **PLAY** shows the blue capsule hero on START and deals a **hand of 3 dice cards** (bottom of screen). Card types: ODD (1/3/5), EVEN (2/4/6), FIXED n (n random 1-6, set when drawn), RANDOM (1-6); each type has its own color.
+  - Tapping a card: the card leaves the hand, a white 3D die drops into the board center spinning and lands on the rolled number, the hero hops tile by tile (wrapping around), then a new random card fills the empty slot. Cards are disabled while moving. There is no ROLL DICE button anymore.
+  - Info panel shows the played card, rolled value and hero position (updates on every hop).
+  - Fixed camera angle; `CameraFit` finds the closest distance (binary search over the board's corners) that fits the board between a top margin (info panel) and bottom margin (cards) on any aspect ratio.
+- 22 PlayMode tests pass: dice + card draw rules, loop shape + clockwise order, PLAY deals 3 cards, playing a card (roll matches card, die face, hop, card replaced), tap guard, camera framing between UI margins at 3 aspect ratios.
 
 **Not done yet**
 - No combat, economy, saving, sound or real art (by design for the prototype).
@@ -23,13 +24,13 @@ _Last updated: 2026-10-16_
 
 ## Known issues
 
-- **"Fixed" dice interpretation is an assumption:** it always rolls `Fixed Dice Value` from the `GameController` Inspector (default 3). Confirm the intended rule with the user.
-- Board looks small on tall portrait phones — `CameraFit` uses a conservative bounding sphere.
+- Card draw is uniform over the 4 types (no deck, no weights, duplicates allowed).
+- Cards briefly look faded when re-enabled (default Button color-tint fade) — cosmetic.
 - Dice face orientation (yaw) after landing is arbitrary; only the top face is controlled.
 
 ## Next steps
 
-1. User tests the prototype in the Editor, then merges PR `feature/board-prototype`.
+1. User tests the card hand in the Editor, then merges PR `feature/dice-cards`.
 2. Decide screen orientation (portrait is likely for this genre) and lock it in Player Settings.
 3. First Android device build (USB debugging, Build And Run).
 4. Sound/juice for dice and hops (e.g. landing squash, dust).
@@ -45,9 +46,14 @@ _Last updated: 2026-10-16_
 - Tile numbers are small world-space UI canvases. Don't switch them to 3D `TextMesh` — in URP it draws through the hero.
 - UI uses legacy `UnityEngine.UI.Text` with the built-in font (no TextMeshPro import needed).
 - Placeholder materials are in `Assets/_Project/Art/Materials`; the builder reuses existing ones, so color tweaks survive a rebuild.
-- The UI layout was checked in portrait (9:19.5) and landscape (16:9). The ROLL DICE button sits bottom-right so it never covers the board.
+- Cards: `DiceCard` (data, `Draw()`), `CardView` (one UI slot, colors/labels), `GameController` owns the hand (`Hand`, `PlayCard(slot)`). Hand size = number of `_cardSlots` (builder `HandSize`).
+- If the UI layout changes, keep `CameraFit` top/bottom margins in sync so the board isn't covered. Layout was checked in portrait (9:19.5) and landscape (16:9).
 
 ## History
+
+### 2026-10-16 — Dice card hand
+- Replaced ROLL DICE with a 3-card hand; a new random card is drawn after each move. Fixed cards carry their own number (resolves the old "Fixed" assumption).
+- CameraFit now fits exact board corners between UI margins (board is much bigger on screen).
 
 ### 2026-10-16 — Project setup + board prototype
 - Installed Unity Hub, Unity 6000.3.26f1 + Android modules. Created public repo `bahadircolak44/roll-of-legends` (`main` protected, squash merge).

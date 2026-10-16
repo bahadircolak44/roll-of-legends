@@ -25,6 +25,10 @@ namespace RollOfLegends.EditorTools
 
         private const float DiceSize = 1.2f;
 
+        private const int HandSize = 3;
+        private static readonly Vector2 CardSize = new Vector2(200f, 260f);
+        private const float CardGap = 30f;
+
         private static readonly Color TileColor = new Color(0.93f, 0.89f, 0.80f);
         private static readonly Color StartTileColor = new Color(0.45f, 0.80f, 0.45f);
         private static readonly Color HeroColor = new Color(0.20f, 0.45f, 0.95f);
@@ -63,9 +67,7 @@ namespace RollOfLegends.EditorTools
             Text infoText = CreateInfoPanel(canvas.transform);
             Button playButton = CreateButton(canvas.transform, "PlayButton", "PLAY",
                 new Vector2(0.5f, 0.5f), Vector2.zero, new Color(0.20f, 0.65f, 0.30f));
-            // Bottom-right corner: stays clear of the board in both portrait and landscape.
-            Button rollButton = CreateButton(canvas.transform, "RollDiceButton", "ROLL DICE",
-                new Vector2(1f, 0f), new Vector2(-40f, 40f), new Color(0.95f, 0.55f, 0.10f));
+            CardView[] cardSlots = CreateHand(canvas.transform, HandSize);
             CreateEventSystem();
 
             var controller = new GameObject("GameController").AddComponent<GameController>();
@@ -74,7 +76,12 @@ namespace RollOfLegends.EditorTools
             serialized.FindProperty("_hero").objectReferenceValue = hero;
             serialized.FindProperty("_dice").objectReferenceValue = dice;
             serialized.FindProperty("_playButton").objectReferenceValue = playButton;
-            serialized.FindProperty("_rollButton").objectReferenceValue = rollButton;
+            SerializedProperty slots = serialized.FindProperty("_cardSlots");
+            slots.arraySize = cardSlots.Length;
+            for (int i = 0; i < cardSlots.Length; i++)
+            {
+                slots.GetArrayElementAtIndex(i).objectReferenceValue = cardSlots[i];
+            }
             serialized.FindProperty("_infoText").objectReferenceValue = infoText;
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
@@ -326,6 +333,38 @@ namespace RollOfLegends.EditorTools
             Text text = CreateText(buttonObject.transform, "Label", label, 64, TextAnchor.MiddleCenter);
             text.fontStyle = FontStyle.Bold;
             return button;
+        }
+
+        /// <summary>The player's hand: card slots in a row along the bottom of the screen.</summary>
+        private static CardView[] CreateHand(Transform canvas, int handSize)
+        {
+            var slots = new CardView[handSize];
+            float rowWidth = handSize * CardSize.x + (handSize - 1) * CardGap;
+
+            for (int i = 0; i < handSize; i++)
+            {
+                var cardObject = new GameObject($"Card_{i}", typeof(RectTransform), typeof(Image), typeof(Button));
+                cardObject.transform.SetParent(canvas, false);
+                var rect = cardObject.GetComponent<RectTransform>();
+                rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0f); // bottom center
+                rect.sizeDelta = CardSize;
+                rect.anchoredPosition = new Vector2(-rowWidth / 2f + CardSize.x / 2f + i * (CardSize.x + CardGap), 40f);
+
+                var image = cardObject.GetComponent<Image>();
+                cardObject.GetComponent<Button>().targetGraphic = image;
+                Text label = CreateText(cardObject.transform, "Label", "", 40, TextAnchor.MiddleCenter);
+                label.supportRichText = true;
+                label.horizontalOverflow = HorizontalWrapMode.Overflow; // never split a word like "RANDOM"
+
+                var card = cardObject.AddComponent<CardView>();
+                var serialized = new SerializedObject(card);
+                serialized.FindProperty("_background").objectReferenceValue = image;
+                serialized.FindProperty("_label").objectReferenceValue = label;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+                slots[i] = card;
+            }
+
+            return slots;
         }
 
         private static Text CreateText(Transform parent, string name, string content, int fontSize, TextAnchor alignment)

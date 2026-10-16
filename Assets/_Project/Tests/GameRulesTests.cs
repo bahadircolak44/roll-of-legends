@@ -51,6 +51,26 @@ namespace RollOfLegends.Tests
             CollectionAssert.AreEquivalent(new[] { DiceType.Odd, DiceType.Even, DiceType.Fixed, DiceType.Random }, seen);
         }
 
+        [Test]
+        public void DrawCard_GivesEveryCardTypeAndFixedCardsHaveANumberFromOneToSix()
+        {
+            var types = new HashSet<DiceType>();
+            var fixedNumbers = new HashSet<int>();
+            for (int i = 0; i < Samples * 2; i++)
+            {
+                DiceCard card = DiceCard.Draw();
+                types.Add(card.Type);
+                if (card.Type == DiceType.Fixed)
+                {
+                    Assert.That(card.FixedValue, Is.InRange(1, 6));
+                    Assert.AreEqual(card.FixedValue, card.Roll(), "A Fixed card always rolls its own number");
+                    fixedNumbers.Add(card.FixedValue);
+                }
+            }
+            Assert.AreEqual(4, types.Count, "All four card types should be drawn");
+            Assert.AreEqual(6, fixedNumbers.Count, "Fixed cards should cover every number 1-6");
+        }
+
         [TestCase(0, 6, 14, 6)]
         [TestCase(13, 1, 14, 0)]
         [TestCase(12, 3, 14, 1)]
