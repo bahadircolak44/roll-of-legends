@@ -447,11 +447,12 @@ namespace RollOfLegends.EditorTools
             {
                 (TileEffect.Sword, 2, new[] { SavePrefab(BuildSword(), "Effects") }),
                 (TileEffect.Spear, 2, new[] { SavePrefab(BuildSpearPickup(), "Effects") }),
+                (TileEffect.SkillCard, 2, new[] { SavePrefab(BuildSkillCard(), "Effects") }),
                 (TileEffect.HealthPotion, 2, new[] { SavePrefab(BuildHealthPotion(), "Effects") }),
-                (TileEffect.RepairElixir, 2, new[] { SavePrefab(BuildRepairElixir(), "Effects") }),
+                (TileEffect.RepairElixir, 1, new[] { SavePrefab(BuildRepairElixir(), "Effects") }),
                 (TileEffect.Shield, 1, new[] { SavePrefab(BuildShield(), "Effects") }),
                 (TileEffect.SpellBook, 2, new[] { SavePrefab(BuildSpellBook(), "Effects") }),
-                (TileEffect.Chest, 1, new[] { SavePrefab(BuildChest(), "Effects") }),
+                (TileEffect.Chest, 2, new[] { SavePrefab(BuildChest(), "Effects") }),
                 (TileEffect.Spikes, 2, new[] { SavePrefab(BuildSpikes(), "Effects") }),
                 (TileEffect.Snare, 1, new[] { SavePrefab(BuildSnare(), "Effects") }),
                 (TileEffect.Forest, 2, new[] { SavePrefab(BuildForest(), "Effects") }),
@@ -522,6 +523,10 @@ namespace RollOfLegends.EditorTools
             var projectile = new GameObject("SpearProjectile");
             BuildSpearModel(projectile).transform.localScale = Vector3.one * 1.15f;
             Set(serialized, "_spearPrefab", SavePrefab(projectile, "Fx"));
+
+            var sword = new GameObject("SwordProjectile");
+            PlaceModel(sword, "KayKit/Adventurers/sword_1handed.fbx", height: 0.9f);
+            Set(serialized, "_swordPrefab", SavePrefab(sword, "Fx"));
             serialized.ApplyModifiedPropertiesWithoutUndo();
             return combat;
         }
@@ -588,6 +593,25 @@ namespace RollOfLegends.EditorTools
             blade.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
             SetMaterial(blade, "Spikes", Palette.Spikes, smoothness: 0.8f);
             return spear;
+        }
+
+        /// <summary>A floating, spinning skill card (made from primitives): +1 attack and/or +1 siege.</summary>
+        private static GameObject BuildSkillCard()
+        {
+            var root = new GameObject("SkillCard");
+            var card = new GameObject("Card");
+            card.transform.SetParent(root.transform, false);
+            card.transform.localPosition = new Vector3(0f, 0.6f, 0f);
+            card.transform.localRotation = Quaternion.Euler(0f, 0f, -12f);
+            SetMaterial(Part(card, PrimitiveType.Cube, "Frame", Vector3.zero, new Vector3(0.5f, 0.7f, 0.04f)), "Gold", Hex("#ffcc33"), smoothness: 0.85f);
+            SetMaterial(Part(card, PrimitiveType.Cube, "Face", Vector3.zero, new Vector3(0.42f, 0.62f, 0.06f)), "SkillCardFace", Hex("#3b2a8c"), smoothness: 0.5f);
+            SetMaterial(Part(card, PrimitiveType.Sphere, "Gem", Vector3.zero, new Vector3(0.18f, 0.18f, 0.09f)), "Gem", Hex("#7fe7ff"), smoothness: 0.95f);
+            foreach (float y in new[] { -0.21f, 0.21f })
+            {
+                SetMaterial(Part(card, PrimitiveType.Cube, "Stripe", new Vector3(0f, y, 0f), new Vector3(0.3f, 0.03f, 0.07f)), "Gold", Hex("#ffcc33"), smoothness: 0.85f);
+            }
+            Idle(card, spin: 90f, bob: 0.07f);
+            return root;
         }
 
         private static GameObject BuildHealthPotion()

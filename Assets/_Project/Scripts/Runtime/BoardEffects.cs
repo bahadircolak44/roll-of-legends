@@ -153,7 +153,16 @@ namespace RollOfLegends
             _markers[tile] = marker;
         }
 
-        /// <summary>The monster's winning numbers floating above its head, colored by size.</summary>
+        /// <summary>Updates the text above a monster: its size, or its winning numbers during a fight.</summary>
+        public void RefreshMonsterLabel(int tile)
+        {
+            Monster monster = GetMonster(tile);
+            if (monster == null || _markers[tile] == null) return;
+            Text label = _markers[tile].GetComponentInChildren<Text>(true);
+            if (label != null) label.text = monster.LabelText;
+        }
+
+        /// <summary>The monster's size floating above its head (its winning numbers during a fight), colored by size.</summary>
         private static void AddNumbersLabel(GameObject marker, Monster monster)
         {
             float top = 1.2f;
@@ -181,7 +190,7 @@ namespace RollOfLegends
             text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.MiddleCenter;
             text.horizontalOverflow = HorizontalWrapMode.Overflow;
-            text.text = monster.NumbersText;
+            text.text = monster.LabelText;
             text.color = TierColor(monster.Tier);
             text.GetComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
             text.GetComponent<Outline>().effectDistance = new Vector2(4f, -4f);

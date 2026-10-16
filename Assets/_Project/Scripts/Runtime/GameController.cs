@@ -9,8 +9,11 @@ namespace RollOfLegends
     /// Runs a match against the rival AI.
     /// Your turn: tap a card to see where you could land, tap it again to roll -> the die rolls ->
     /// your hero hops -> the tile's effect happens -> you draw a new card. Then the rival does the same.
-    /// Passing the enemy base throws a spear at it (siege damage); the first to destroy the other base wins.
-    /// Landing on the other hero is a sword attack. Levels (monsters, spell books, finished laps) raise both.
+    /// Spear tiles (and passing the enemy base) throw a spear at the enemy base (siege damage); sword tiles
+    /// throw a sword at the other hero (attack damage), and so does landing on the other hero.
+    /// Levels (monsters, chests, spell books, finished laps) and skill cards make attacks stronger.
+    /// Monster tiles start a fight: you get a new card, then pick a card from your hand to roll.
+    /// The first to destroy the other base wins.
     /// </summary>
     public class GameController : MonoBehaviour
     {
@@ -78,6 +81,9 @@ namespace RollOfLegends
 
         private DiceCard[] _hand;
         private DiceCard[] _rivalHand;
+        private bool[] _handEmpty;      // a played card leaves an empty slot until the hand is refilled
+        private bool[] _rivalHandEmpty;
+        private int _fightSlot = -1;    // the card the player picked for a monster fight
 
         public Fighter Player { get; private set; }
         public Fighter Rival { get; private set; }
@@ -96,6 +102,12 @@ namespace RollOfLegends
         /// <summary>True while anything is happening (your move or the rival's turn). Cards are locked meanwhile.</summary>
         public bool IsBusy { get; private set; }
 
+        /// <summary>True while a monster fight waits for you to pick a card to roll (the turn is paused).</summary>
+        public bool IsChoosingFightCard { get; private set; }
+
+        /// <summary>The monster in the current fight (null when there is no fight).</summary>
+        public Monster CurrentMonster { get; private set; }
+
         /// <summary>The short instruction shown above the cards.</summary>
         public string Message => _promptText.text;
 
@@ -103,6 +115,8 @@ namespace RollOfLegends
         {
             _hand = new DiceCard[_cardSlots.Length];
             _rivalHand = new DiceCard[_cardSlots.Length];
+            _handEmpty = new bool[_cardSlots.Length];
+            _rivalHandEmpty = new bool[_cardSlots.Length];
             _playButton.onClick.AddListener(StartGame);
 
             for (int i = 0; i < _cardSlots.Length; i++)
@@ -146,6 +160,8 @@ namespace RollOfLegends
             _combat.Clear();
             IsBusy = false;
             IsGameOver = false;
+            IsChoosingFightCard = false;
+            CurrentMonster = null;
 
             int rivalHome = _board.TileCount / 2; // the corner diagonally opposite START
             Player = new Fighter(_playerName, 0, _startHp, _startAttack, _baseHp, _startSiege);
@@ -171,6 +187,7 @@ namespace RollOfLegends
             {
                 DrawInto(slot);
                 _rivalHand[slot] = DiceCard.Draw();
+                _rivalHandEmpty[slot] = false;
             }
             ClearSelection();
             SetCardsInteractable(true);
@@ -181,10 +198,19 @@ namespace RollOfLegends
             Say("Your turn: pick a card");
         }
 
-        /// <summary>First tap selects a card and shows where you could land; a second tap rolls it.</summary>
+        /// <summary>
+        /// First tap selects a card and shows where you could land (or, in a monster fight, your chance
+        /// to win with it); a second tap rolls it.
+        /// </summary>
         public void TapCard(int slot)
         {
-            if (IsBusy || IsGameOver || Player == null) return;
+            if (IsGameOver || Player == null || _handEmpty[slot]) return;
+            if (IsChoosingFightCard)
+            {
+                TapFightCard(slot);
+                return;
+            }
+            if (IsBusy) return;
 
             if (SelectedSlot == slot)
             {
@@ -203,6 +229,28 @@ namespace RollOfLegends
             Say($"Tap {CardArt.Title(card.Type)} again to roll!{bonus}");
         }
 
+        private void TapFightCard(int slot)
+        {
+            if (SelectedSlot == slot)
+            {
+                _fightSlot = slot; // FightMonster carries on with this card
+                IsChoosingFightCard = false;
+                SetCardsInteractable(false);
+                ClearSelection();
+                return;
+            }
+
+            SelectedSlot = slot;
+            for (int i = 0; i < _cardSlots.Length; i++)
+            {
+                _cardSlots[i].SetSelected(i == slot);
+            }
+            DiceCard card = _hand[slot];
+            int wins = CurrentMonster.WinningRolls(card, out int possible);
+            string chance = wins == 0 ? "can't win with this card!" : $"wins {wins} of {possible} rolls ({Mathf.RoundToInt(100f * wins / possible)}%)";
+            Say($"Need {CurrentMonster.NumbersText}: {CardArt.Title(card.Type)} {chance} Tap again to roll");
+        }
+
         /// <summary>Highlights every tile this card could take you to, and names what is waiting there.</summary>
         private void ShowLandingPreview(DiceCard card)
         {
@@ -219,7 +267,7 @@ namespace RollOfLegends
                 int tile = Board.Advance(Player.Tile, stepList[i], _board.TileCount);
                 Monster monster = _effects.GetMonster(tile);
                 notes[i] = tile == Rival.Tile ? "Attack!"
-                    : monster != null ? $"{monster.TierName} {monster.NumbersText}"
+                    : monster != null ? $"{monster.TierName} monster"
                     : TileRules.ShortName(_effects.GetEffect(tile));
             }
             _highlighter.Show(Player.Tile, stepList.ToArray(), CardArt.AccentColor(card.Type), notes);
@@ -237,6 +285,7 @@ namespace RollOfLegends
         public void GiveCard(int slot, DiceCard card)
         {
             _hand[slot] = card;
+            _handEmpty[slot] = false;
             _cardSlots[slot].Show(card);
             if (SelectedSlot == slot) ClearSelection();
         }
@@ -256,12 +305,11 @@ namespace RollOfLegends
             IsBusy = true;
             SetCardsInteractable(false);
 
-            DiceCard card = _hand[slot];
-            _cardSlots[slot].Hide(); // the card leaves the hand
+            DiceCard card = UseCard(Player, slot);
             yield return TakeTurn(Player, Rival, card);
             if (!IsGameOver)
             {
-                DrawInto(slot);
+                RefillHand(Player);
                 yield return RivalTurns();
             }
 
@@ -291,10 +339,10 @@ namespace RollOfLegends
                 else
                 {
                     int slot = RivalAI.ChooseCard(_rivalHand, Rival, Player, _effects.GetEffect, _board.TileCount, _effects.GetMonster);
-                    DiceCard card = _rivalHand[slot];
+                    DiceCard card = UseCard(Rival, slot);
                     yield return TakeTurn(Rival, Player, card);
                     if (IsGameOver) yield break;
-                    _rivalHand[slot] = DrawFor(Rival);
+                    RefillHand(Rival);
                 }
 
                 if (Player.SkipTurns == 0) yield break;
@@ -378,29 +426,63 @@ namespace RollOfLegends
         }
 
         /// <summary>
-        /// A monster fight: the fighter gets a fresh random fight card and rolls it. One of the monster's
-        /// winning numbers defeats it (reward); anything else and the monster strikes back.
+        /// A monster fight: the monster picks its winning numbers, the fighter gets a new card, then picks a
+        /// card from the hand and rolls it (you choose by tapping; the rival picks its best card). One of the
+        /// winning numbers defeats the monster (levels); anything else and it strikes back.
         /// </summary>
         private IEnumerator FightMonster(Fighter fighter)
         {
-            Monster monster = _effects.GetMonster(fighter.Tile);
+            int tile = fighter.Tile;
+            Monster monster = _effects.GetMonster(tile);
             Transform view = ViewOf(fighter);
             Color tierColor = BoardEffects.TierColor(monster.Tier);
+            GameObject marker = _effects.GetMarker(tile);
+            Transform monsterView = marker != null ? marker.transform : null;
+            Vector3 monsterBody = _board.GetTilePosition(tile) + Vector3.up * 0.6f;
 
-            DiceCard fightCard = DrawFightCard();
-            Say($"{fighter.Name} fights a {monster.TierName.ToLower()} monster! Needs {monster.NumbersText}");
-            Log($"{NameOf(fighter)} fights a <color=#{Hex(tierColor)}>{monster.TierName.ToLower()} monster</color> " +
-                $"(wins on {monster.NumbersText}) with fight card {CardTag(fightCard)}");
-            _fx.Popup(view.position + AboveHead, $"FIGHT! {CardArt.Title(fightCard.Type)}", tierColor);
+            // The monster decides what beats it, and the fighter gets a fresh card for the fight.
+            monster.Reveal();
+            CurrentMonster = monster;
+            _effects.RefreshMonsterLabel(tile);
+            CombatFx.Animate(monsterView, "Yes", "No", "Wave", "Jump");
+            _fx.Popup(monsterBody + Vector3.up * 1.6f, $"NEED {monster.NumbersText}", tierColor);
+            Log($"{NameOf(fighter)} meets a <color=#{Hex(tierColor)}>{monster.TierName.ToLower()} monster</color>: " +
+                $"it can be beaten with <b>{monster.NumbersText}</b>");
+            RefillHand(fighter);
+            _fx.Popup(view.position + AboveHead, "+1 CARD", GainColor);
             yield return new WaitForSeconds(_messagePause);
 
-            int roll = fightCard.Roll();
-            yield return _dice.Roll(roll);
+            int slot;
+            if (fighter == Player)
+            {
+                IsChoosingFightCard = true;
+                _fightSlot = -1;
+                ClearSelection();
+                SetCardsInteractable(true);
+                Say($"FIGHT! Roll {monster.NumbersText} to win. Pick a card");
+                while (_fightSlot < 0) yield return null;
+                slot = _fightSlot;
+                IsChoosingFightCard = false;
+                SetCardsInteractable(false);
+            }
+            else
+            {
+                slot = RivalAI.ChooseFightCard(_rivalHand, monster);
+                yield return new WaitForSeconds(_messagePause * 0.5f);
+            }
+
+            DiceCard fightCard = UseCard(fighter, slot);
+            Say($"{fighter.Name} fights with {CardArt.Title(fightCard.Type)}! Needs {monster.NumbersText}");
+            int[] dice = fightCard.RollDice();
+            int roll = 0;
+            foreach (int die in dice)
+            {
+                yield return _dice.Roll(die);
+                roll += die;
+            }
+            Log($"{NameOf(fighter)} fights with {CardTag(fightCard)} → rolled <b>{roll}</b>");
 
             EffectResult result = TileRules.FightMonster(fighter, monster, roll);
-            GameObject marker = _effects.GetMarker(fighter.Tile);
-            Transform monsterView = marker != null ? marker.transform : null;
-            Vector3 monsterBody = _board.GetTilePosition(fighter.Tile) + Vector3.up * 0.6f;
             if (result.Good)
             {
                 yield return DefeatMonster(view, monsterView, monsterBody);
@@ -415,9 +497,15 @@ namespace RollOfLegends
             Log($"{NameOf(fighter)} {result.Description}: <color=#{Hex(color)}>{result.Change}</color>");
             UpdateBadges();
 
+            monster.Hide(); // a monster that survives picks new numbers next time
+            CurrentMonster = null;
             if (result.RemoveEffect)
             {
-                _effects.MoveElsewhere(fighter.Tile, Player.Tile, Rival.Tile);
+                _effects.MoveElsewhere(tile, Player.Tile, Rival.Tile);
+            }
+            else
+            {
+                _effects.RefreshMonsterLabel(tile);
             }
             if (result.Good) yield return ShowLevelUp(fighter);
             if (fighter.IsKnockedOut) yield return KnockOut(fighter);
@@ -450,13 +538,6 @@ namespace RollOfLegends
             yield return new WaitForSeconds(0.25f);
             _combat.Run(_combat.Claw(hero.position + Vector3.up * 0.25f));
             yield return _combat.Hit(hero);
-        }
-
-        /// <summary>A random common card (no DOUBLE): fights are about rolling a single die.</summary>
-        private static DiceCard DrawFightCard()
-        {
-            DiceType type = Dice.RandomType();
-            return new DiceCard(type, type == DiceType.Fixed ? Random.Range(1, 7) : 0);
         }
 
         private IEnumerator ResolveLanding(Fighter mover, Fighter other)
@@ -523,19 +604,35 @@ namespace RollOfLegends
         /// <summary>Passing the enemy base: the hero throws a spear at the castle (damage = siege).</summary>
         private IEnumerator SiegeAttack(Fighter mover, Fighter other)
         {
-            Transform view = ViewOf(mover);
             Transform castle = CastleOf(other);
-            Vector3 target = castle.position + Vector3.up * 1.1f;
-            yield return _combat.Face(view, target);
-            CombatFx.Animate(view, 1.3f, "Throw", "1H_Ranged_Shoot");
-            yield return new WaitForSeconds(0.25f);
-
             int damage = other.DamageBase(mover.Siege);
-            yield return _combat.SpearThrow(view.position + Vector3.up * 0.55f, target, castle);
+            yield return ThrowSpear(ViewOf(mover), castle);
             _fx.Popup(castle.position + Vector3.up * 2.2f, $"-{damage} BASE", BaseHitColor);
             Log($"{NameOf(mover)} threw a spear at {NameOf(other)}'s base: <color=#{Hex(BaseHitColor)}>-{damage}</color> ({other.BaseHp} left)");
             UpdateBadges();
-            yield return _combat.FaceFront(view);
+        }
+
+        /// <summary>The hero turns to a castle and throws a spear that flies over the board and sticks in it.</summary>
+        private IEnumerator ThrowSpear(Transform hero, Transform castle)
+        {
+            Vector3 target = castle.position + Vector3.up * 1.1f;
+            yield return _combat.Face(hero, target);
+            CombatFx.Animate(hero, 1.3f, "Throw", "1H_Ranged_Shoot");
+            yield return new WaitForSeconds(0.25f);
+            yield return _combat.SpearThrow(hero.position + Vector3.up * 0.55f, target, castle);
+            yield return _combat.FaceFront(hero);
+        }
+
+        /// <summary>The hero throws a spinning sword at the other hero, which slashes and hits it.</summary>
+        private IEnumerator ThrowSword(Transform hero, Transform target)
+        {
+            yield return _combat.Face(hero, target.position);
+            CombatFx.Animate(hero, 1.3f, "Throw", "1H_Melee_Attack_Slice_Horizontal");
+            yield return new WaitForSeconds(0.25f);
+            yield return _combat.SwordThrow(hero.position + Vector3.up * 0.5f, target.position + Vector3.up * 0.2f);
+            _combat.Run(_combat.Slash(target.position + Vector3.up * 0.25f, CombatFx.SlashColor));
+            _combat.Run(_combat.Hit(target, 1.2f));
+            yield return _combat.FaceFront(hero);
         }
 
         /// <summary>The visual effect for a tile: a glow for pickups, a hit for spikes, a spell show for spell books.</summary>
@@ -545,7 +642,18 @@ namespace RollOfLegends
             switch (effect)
             {
                 case TileEffect.Sword:
+                    yield return ThrowSword(view, ViewOf(other));
+                    break;
+
                 case TileEffect.Spear:
+                    yield return ThrowSpear(view, CastleOf(other));
+                    break;
+
+                case TileEffect.SkillCard:
+                    CombatFx.Animate(view, 1.5f, "PickUp", "Interact");
+                    yield return _combat.Aura(view, _heroHeight, CombatFx.MagicColor);
+                    break;
+
                 case TileEffect.Shield:
                 case TileEffect.Chest:
                     CombatFx.Animate(view, 1.5f, "PickUp", "Interact");
@@ -667,7 +775,38 @@ namespace RollOfLegends
         private void DrawInto(int slot)
         {
             _hand[slot] = DrawFor(Player);
+            _handEmpty[slot] = false;
             _cardSlots[slot].Show(_hand[slot]);
+        }
+
+        /// <summary>Takes a card out of a hand to play it; its slot stays empty until the hand is refilled.</summary>
+        private DiceCard UseCard(Fighter fighter, int slot)
+        {
+            if (fighter == Player)
+            {
+                _handEmpty[slot] = true;
+                _cardSlots[slot].Hide();
+                return _hand[slot];
+            }
+            _rivalHandEmpty[slot] = true;
+            return _rivalHand[slot];
+        }
+
+        /// <summary>Draws a new card into every empty slot of a hand.</summary>
+        private void RefillHand(Fighter fighter)
+        {
+            for (int slot = 0; slot < _hand.Length; slot++)
+            {
+                if (fighter == Player && _handEmpty[slot])
+                {
+                    DrawInto(slot);
+                }
+                else if (fighter == Rival && _rivalHandEmpty[slot])
+                {
+                    _rivalHand[slot] = DrawFor(Rival);
+                    _rivalHandEmpty[slot] = false;
+                }
+            }
         }
 
         /// <summary>A random card, or the rare DOUBLE if this side opened a treasure chest.</summary>
@@ -766,6 +905,7 @@ namespace RollOfLegends
         private static Color ChangeColor(EffectResult result)
         {
             if (!result.Good) return result.Change.Contains("SKIP") || result.Change.Contains("ROLL") ? SkipColor : LossColor;
+            if (result.Change.Contains("STRIKE") || result.Change.Contains("THROW")) return AttackColor;
             if (result.Change.Contains("LV")) return LevelColor;
             if (result.Change.Contains("ATK") || result.Change.Contains("DEF") || result.Change.Contains("SIEGE")) return AttackColor;
             if (result.Change.Contains("BASE")) return BaseHitColor;

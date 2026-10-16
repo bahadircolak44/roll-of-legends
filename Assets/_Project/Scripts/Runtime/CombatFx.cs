@@ -36,6 +36,9 @@ namespace RollOfLegends
         [Tooltip("The spear thrown at castles (its tip must point along +Z).")]
         [SerializeField] private GameObject _spearPrefab;
 
+        [Tooltip("The sword thrown at heroes (it spins end over end while it flies).")]
+        [SerializeField] private GameObject _swordPrefab;
+
         [Tooltip("1 = normal screen shake, 0 = no screen shake.")]
         [SerializeField] private float _shakeStrength = 1f;
 
@@ -176,7 +179,10 @@ namespace RollOfLegends
             spear.transform.position = from;
             TrailRenderer trail = AddTrail(spear, new Color(1f, 0.95f, 0.8f), width: 0.18f, time: 0.22f);
 
-            yield return Fly(spear.transform, from, to, arcHeight: 1.1f, duration: 0.42f, faceForward: true);
+            // Longer throws fly higher and take a little longer.
+            float distance = Vector3.Distance(from, to);
+            yield return Fly(spear.transform, from, to, arcHeight: 1f + distance * 0.18f,
+                duration: Mathf.Clamp(0.3f + distance * 0.04f, 0.4f, 0.85f), faceForward: true);
 
             trail.emitting = false;
             Vector3 front = TowardCamera(to, 0.6f);
@@ -192,6 +198,25 @@ namespace RollOfLegends
             // The spear stays stuck for a moment, then shrinks away.
             yield return new WaitForSeconds(0.25f);
             StartCoroutine(ShrinkAndDestroy(spear.transform, 0.35f));
+        }
+
+        /// <summary>A glowing sword spins through the air to the target; sparks fly where it hits.</summary>
+        public IEnumerator SwordThrow(Vector3 from, Vector3 to)
+        {
+            GameObject sword = _swordPrefab != null ? Instantiate(_swordPrefab, transform) : FallbackSpear();
+            sword.transform.position = from;
+            TrailRenderer trail = AddTrail(sword, SlashColor, width: 0.3f, time: 0.2f);
+
+            float distance = Vector3.Distance(from, to);
+            Transform body = sword.transform;
+            yield return Fly(body, from, to, arcHeight: 0.6f + distance * 0.12f,
+                duration: Mathf.Clamp(0.25f + distance * 0.04f, 0.35f, 0.8f), faceForward: true,
+                spin: t => body.rotation *= Quaternion.Euler(t * 1440f, 0f, 0f)); // end over end
+
+            trail.emitting = false;
+            Sparks(TowardCamera(to, 0.6f), SlashColor, count: 26, speed: 5f, size: 0.2f, lifetime: 0.4f, gravity: 1.2f, streaks: true);
+            ShakeCamera(0.1f, 0.25f);
+            StartCoroutine(ShrinkAndDestroy(body, 0.2f));
         }
 
         /// <summary>A flaming ball flies from one point to another and explodes.</summary>

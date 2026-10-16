@@ -105,11 +105,12 @@ namespace RollOfLegends.Tests
 
             Assert.AreEqual(2, _effects.Count(TileEffect.Sword));
             Assert.AreEqual(2, _effects.Count(TileEffect.Spear));
+            Assert.AreEqual(2, _effects.Count(TileEffect.SkillCard));
             Assert.AreEqual(2, _effects.Count(TileEffect.HealthPotion));
-            Assert.AreEqual(2, _effects.Count(TileEffect.RepairElixir));
+            Assert.AreEqual(1, _effects.Count(TileEffect.RepairElixir));
             Assert.AreEqual(1, _effects.Count(TileEffect.Shield));
             Assert.AreEqual(2, _effects.Count(TileEffect.SpellBook));
-            Assert.AreEqual(1, _effects.Count(TileEffect.Chest));
+            Assert.AreEqual(2, _effects.Count(TileEffect.Chest));
             Assert.AreEqual(2, _effects.Count(TileEffect.Forest));
             Assert.AreEqual(2, _effects.Count(TileEffect.Spikes));
             Assert.AreEqual(1, _effects.Count(TileEffect.Snare));
@@ -200,16 +201,28 @@ namespace RollOfLegends.Tests
         // ---------- Tile effects ----------
 
         [UnityTest]
-        public IEnumerator LandingOnSword_RaisesAttackAndSwordMovesElsewhere()
+        public IEnumerator LandingOnSword_HitsTheRivalAndSwordMovesElsewhere()
         {
             StartWithEmptyBoard();
             _effects.SetEffect(3, TileEffect.Sword);
 
             yield return PlayFixed(3);
 
-            Assert.AreEqual(3, _controller.Player.Attack);
+            Assert.AreEqual(20 - 2, _controller.Rival.Hp, "Sword strike: damage = your attack (2)");
             Assert.AreEqual(TileEffect.None, _effects.GetEffect(3));
             Assert.AreEqual(1, _effects.Count(TileEffect.Sword), "The sword reappears on another tile");
+        }
+
+        [UnityTest]
+        public IEnumerator LandingOnSpear_HitsTheRivalBase()
+        {
+            StartWithEmptyBoard();
+            _effects.SetEffect(3, TileEffect.Spear);
+
+            yield return PlayFixed(3);
+
+            Assert.AreEqual(10 - 2, _controller.Rival.BaseHp, "Spear throw: damage = your siege (2)");
+            Assert.AreEqual(1, _effects.Count(TileEffect.Spear), "The spear reappears on another tile");
         }
 
         [UnityTest]
@@ -223,8 +236,8 @@ namespace RollOfLegends.Tests
             string history = string.Join("\n", _log.Entries);
             StringAssert.Contains("Bahadır", history);
             StringAssert.Contains("FIXED 3", history);
-            StringAssert.Contains("found a sword", history);
-            StringAssert.Contains("+1 ATK", history);
+            StringAssert.Contains("threw a sword", history);
+            StringAssert.Contains("SWORD STRIKE", history);
             StringAssert.Contains("Rival", history, "The rival's turn is logged too");
         }
 
@@ -257,9 +270,10 @@ namespace RollOfLegends.Tests
         public IEnumerator MonsterFight_Losing_MonsterStrikesBackAndStays()
         {
             StartWithEmptyBoard();
-            _effects.SetMonster(2, new Monster(MonsterTier.Big, 7)); // 7 can never be rolled
+            _effects.SetMonster(2, new Monster(MonsterTier.Big, 5));
 
             yield return PlayFixed(2);
+            yield return FightWith(new DiceCard(DiceType.Fixed, 3)); // 3 misses
 
             Assert.AreEqual(20 - 5, _controller.Player.Hp);
             Assert.AreEqual(TileEffect.Monster, _effects.GetEffect(2));
@@ -271,9 +285,11 @@ namespace RollOfLegends.Tests
         public IEnumerator MonsterFight_Winning_GivesRewardAndMonsterMovesAway()
         {
             StartWithEmptyBoard();
-            _effects.SetMonster(2, new Monster(MonsterTier.Medium, 1, 2, 3, 4, 5, 6)); // any roll wins
+            _effects.SetMonster(2, new Monster(MonsterTier.Medium, 2, 4, 6));
 
             yield return PlayFixed(2);
+            Assert.AreEqual(3, _controller.Hand.Count);
+            yield return FightWith(new DiceCard(DiceType.Even, 0)); // every EVEN roll wins
 
             Assert.AreEqual(3, _controller.Player.Level, "Medium monster: +2 LV");
             Assert.AreEqual(4, _controller.Player.Attack, "Each level: +1 ATK");
@@ -352,14 +368,17 @@ namespace RollOfLegends.Tests
         }
 
         [UnityTest]
-        public IEnumerator Chest_GivesARareDoubleCard()
+        public IEnumerator Chest_GivesATreasure()
         {
             StartWithEmptyBoard();
             _effects.SetEffect(3, TileEffect.Chest);
 
             yield return PlayFixed(3);
 
-            Assert.AreEqual(DiceType.Double, _controller.Hand[0].Type, "The refilled slot holds the rare card");
+            Fighter player = _controller.Player;
+            bool gotSomething = player.Level > 1 || player.Hp > 20 || player.Defense > 0 || _controller.Hand[0].Type == DiceType.Double;
+            Assert.IsTrue(gotSomething, "A level, healing, armor or a rare DOUBLE card");
+            Assert.AreEqual(1, _effects.Count(TileEffect.Chest), "The chest reappears on another tile");
         }
 
         [UnityTest]
@@ -451,10 +470,23 @@ namespace RollOfLegends.Tests
             yield return WaitUntilIdle();
         }
 
+        /// <summary>In a monster fight: puts this card in the hand and rolls it.</summary>
+        private IEnumerator FightWith(DiceCard card)
+        {
+            Assert.IsTrue(_controller.IsChoosingFightCard, "A monster fight should be waiting for a card");
+            Assert.IsNotNull(_controller.CurrentMonster);
+            _controller.GiveCard(1, card);
+            Click("Card_1"); // select: shows the chance to win
+            StringAssert.Contains("Need", _controller.Message);
+            Click("Card_1"); // roll
+            yield return WaitUntilIdle();
+        }
+
+        /// <summary>Waits until the turn is over, or until a monster fight waits for you to pick a card.</summary>
         private IEnumerator WaitUntilIdle()
         {
             float timeout = Time.realtimeSinceStartup + 30f;
-            while (_controller.IsBusy)
+            while (_controller.IsBusy && !_controller.IsChoosingFightCard)
             {
                 Assert.Less(Time.realtimeSinceStartup, timeout, "The turn never finished");
                 yield return null;

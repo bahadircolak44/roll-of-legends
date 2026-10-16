@@ -5,13 +5,14 @@ namespace RollOfLegends
     public enum TileEffect
     {
         None,
-        Sword,        // +1 attack against heroes (used up)
-        Spear,        // +1 siege against bases (used up)
+        Sword,        // throw a sword at the other hero: damage = your attack (used up)
+        Spear,        // throw a spear at the other base: damage = your siege (used up)
         HealthPotion, // heals your hero (used up)
         RepairElixir, // repairs your base (used up)
         Shield,       // +1 defense (used up)
         SpellBook,    // casts a random spell (used up)
-        Chest,        // your next card is a rare DOUBLE card (used up)
+        Chest,        // treasure: a level, healing, defense or a rare DOUBLE card (used up)
+        SkillCard,    // a skill: +1 attack and/or +1 siege (used up)
         Spikes,       // damage (stays)
         Snare,        // skip the next turn (stays)
         Forest,       // your next roll is lower (stays)
@@ -26,12 +27,28 @@ namespace RollOfLegends
         Wisdom,   // you gain 1-3 levels
     }
 
+    /// <summary>What a skill card teaches.</summary>
+    public enum Skill
+    {
+        Blade,   // +1 attack (sword, against heroes)
+        Siege,   // +1 siege (spear, against bases)
+        Mastery, // rare: both
+    }
+
+    /// <summary>What is inside a treasure chest.</summary>
+    public enum ChestLoot
+    {
+        Level,    // +1 level
+        Heal,     // health
+        Armor,    // +1 defense
+        RareCard, // the next card is a DOUBLE
+    }
+
     /// <summary>What happens when a fighter lands on a tile effect. All numbers are tunable here.</summary>
     public static class TileRules
     {
-        public const int SwordBonus = 1;
-        public const int SpearBonus = 1;
         public const int PotionHeal = 5;
+        public const int ChestHeal = 6;
         public const int BaseRepair = 3;
         public const int ShieldBonus = 1;
         public const int SpikeDamage = 3;
@@ -48,12 +65,24 @@ namespace RollOfLegends
             switch (effect)
             {
                 case TileEffect.Sword:
-                    mover.Attack += SwordBonus;
-                    return new EffectResult("found a sword", $"+{SwordBonus} ATK", good: true, removeEffect: true);
+                {
+                    int taken = other.TakeDamage(mover.Attack);
+                    return new EffectResult($"threw a sword at {other.Name}", "SWORD STRIKE!", good: true, removeEffect: true,
+                        otherChange: $"-{taken} HP", otherChangeOnBase: false);
+                }
 
                 case TileEffect.Spear:
-                    mover.Siege += SpearBonus;
-                    return new EffectResult("found a siege spear", $"+{SpearBonus} SIEGE", good: true, removeEffect: true);
+                {
+                    int taken = other.DamageBase(mover.Siege);
+                    return new EffectResult($"threw a spear at {other.Name}'s base", "SPEAR THROW!", good: true, removeEffect: true,
+                        otherChange: $"-{taken} BASE", otherChangeOnBase: true);
+                }
+
+                case TileEffect.SkillCard:
+                {
+                    float chance = Random.value;
+                    return LearnSkill(mover, chance < 0.42f ? Skill.Blade : chance < 0.84f ? Skill.Siege : Skill.Mastery);
+                }
 
                 case TileEffect.HealthPotion:
                     mover.Heal(PotionHeal);
@@ -71,8 +100,7 @@ namespace RollOfLegends
                     return CastSpell(mover, other, (Spell)Random.Range(0, 4));
 
                 case TileEffect.Chest:
-                    mover.LuckyDraw = true;
-                    return new EffectResult("opened a treasure chest: next card is a rare DOUBLE", "RARE CARD!", good: true, removeEffect: true);
+                    return OpenChest(mover, (ChestLoot)Random.Range(0, 4));
 
                 case TileEffect.Spikes:
                 {
@@ -109,6 +137,42 @@ namespace RollOfLegends
             int taken = fighter.TakeDamage(monster.Damage);
             return new EffectResult($"rolled {roll} (needed {monster.NumbersText}) and the {monster.TierName.ToLower()} monster struck back",
                 $"-{taken} HP", good: false, removeEffect: false);
+        }
+
+        public static EffectResult LearnSkill(Fighter fighter, Skill skill)
+        {
+            switch (skill)
+            {
+                case Skill.Blade:
+                    fighter.Attack += 1;
+                    return new EffectResult("read a skill card: Blade Training", "+1 ATK", good: true, removeEffect: true);
+                case Skill.Siege:
+                    fighter.Siege += 1;
+                    return new EffectResult("read a skill card: Siege Training", "+1 SIEGE", good: true, removeEffect: true);
+                default:
+                    fighter.Attack += 1;
+                    fighter.Siege += 1;
+                    return new EffectResult("read a rare skill card: War Master", "+1 ATK +1 SIEGE", good: true, removeEffect: true);
+            }
+        }
+
+        public static EffectResult OpenChest(Fighter fighter, ChestLoot loot)
+        {
+            switch (loot)
+            {
+                case ChestLoot.Level:
+                    fighter.LevelUp(1);
+                    return new EffectResult("opened a treasure chest: a scroll of experience", "+1 LV", good: true, removeEffect: true);
+                case ChestLoot.Heal:
+                    fighter.Heal(ChestHeal);
+                    return new EffectResult("opened a treasure chest: healing herbs", $"+{ChestHeal} HP", good: true, removeEffect: true);
+                case ChestLoot.Armor:
+                    fighter.Defense += 1;
+                    return new EffectResult("opened a treasure chest: sturdy armor", "+1 DEF", good: true, removeEffect: true);
+                default:
+                    fighter.LuckyDraw = true;
+                    return new EffectResult("opened a treasure chest: next card is a rare DOUBLE", "RARE CARD!", good: true, removeEffect: true);
+            }
         }
 
         public static EffectResult CastSpell(Fighter caster, Fighter other, Spell spell)
@@ -153,6 +217,9 @@ namespace RollOfLegends
                 case TileEffect.HealthPotion: return "Potion";
                 case TileEffect.RepairElixir: return "Repair";
                 case TileEffect.SpellBook: return "Spell";
+                case TileEffect.Sword: return "Sword hit!";
+                case TileEffect.Spear: return "Spear hit!";
+                case TileEffect.SkillCard: return "Skill";
                 case TileEffect.None: return "";
                 default: return effect.ToString();
             }
