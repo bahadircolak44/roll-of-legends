@@ -3,8 +3,9 @@ using UnityEngine;
 namespace RollOfLegends
 {
     /// <summary>
-    /// Game state of one side (you or the rival): hero health, attack, defense, base health and position.
-    /// Health has no upper limit: potions can take it past the starting value.
+    /// Game state of one side (you or the rival): hero health, level, attack, siege, defense, base health
+    /// and position. Health has no upper limit: potions can take it past the starting value.
+    /// Attack (sword) hurts heroes; Siege (spear) hurts bases. Every level up raises both by one.
     /// Plain C# (no scene object) so the rules are easy to test.
     /// </summary>
     public class Fighter
@@ -13,9 +14,14 @@ namespace RollOfLegends
         public readonly int HomeTile;
         public readonly int StartHp;
         public readonly int StartAttack;
+        public readonly int StartSiege;
 
         public int Hp;
+        public int Level = 1;
+        /// <summary>Sword attack: damage dealt to the other hero.</summary>
         public int Attack;
+        /// <summary>Spear attack: damage dealt to the other base when passing it.</summary>
+        public int Siege;
         public int Defense;
         public int BaseHp;
         public int Tile;
@@ -28,14 +34,16 @@ namespace RollOfLegends
         /// <summary>The next card this side draws is a rare DOUBLE card (from a treasure chest).</summary>
         public bool LuckyDraw;
 
-        public Fighter(string name, int homeTile, int startHp, int attack, int baseHp)
+        public Fighter(string name, int homeTile, int startHp, int attack, int baseHp, int siege = -1)
         {
             Name = name;
             HomeTile = homeTile;
             StartHp = startHp;
             StartAttack = attack;
+            StartSiege = siege < 0 ? attack : siege;
             Hp = startHp;
             Attack = attack;
+            Siege = StartSiege;
             BaseHp = baseHp;
             Tile = homeTile;
         }
@@ -73,6 +81,14 @@ namespace RollOfLegends
             BaseHp += amount; // no upper limit
         }
 
+        /// <summary>Gains levels: each one adds +1 attack and +1 siege.</summary>
+        public void LevelUp(int levels)
+        {
+            Level += levels;
+            Attack += levels;
+            Siege += levels;
+        }
+
         /// <summary>The number of tiles to move for a roll after bonuses (always at least 1). Clears the bonus.</summary>
         public int UseRollBonus(int roll)
         {
@@ -82,13 +98,15 @@ namespace RollOfLegends
         }
 
         /// <summary>
-        /// Knocked out: back home, starting over from scratch. All buffs are lost (attack, defense,
-        /// roll bonuses, rare card); only the base keeps its health.
+        /// Knocked out: back home, starting over from scratch. All buffs are lost (level, attack, siege,
+        /// defense, roll bonuses, rare card); only the base keeps its health.
         /// </summary>
         public void Respawn()
         {
             Hp = StartHp;
+            Level = 1;
             Attack = StartAttack;
+            Siege = StartSiege;
             Defense = 0;
             NextRollBonus = 0;
             SkipTurns = 0;

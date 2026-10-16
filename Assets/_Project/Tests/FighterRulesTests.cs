@@ -54,6 +54,7 @@ namespace RollOfLegends.Tests
             Fighter fighter = NewFighter();
             fighter.Tile = 9;
             fighter.Heal(10);
+            fighter.LevelUp(3);
             fighter.Attack = 6;
             fighter.Defense = 2;
             fighter.NextRollBonus = 2;
@@ -63,7 +64,9 @@ namespace RollOfLegends.Tests
             fighter.Respawn();
             Assert.AreEqual(0, fighter.Tile);
             Assert.AreEqual(20, fighter.Hp);
+            Assert.AreEqual(1, fighter.Level);
             Assert.AreEqual(2, fighter.Attack);
+            Assert.AreEqual(fighter.StartSiege, fighter.Siege);
             Assert.AreEqual(0, fighter.Defense);
             Assert.AreEqual(0, fighter.NextRollBonus);
             Assert.IsFalse(fighter.LuckyDraw);
@@ -84,14 +87,45 @@ namespace RollOfLegends.Tests
         // ---------- Tile effects ----------
 
         [Test]
-        public void Sword_RaisesAttackAndIsUsedUp()
+        public void Sword_HitsTheOtherHeroWithYourAttackAndIsUsedUp()
         {
             Fighter fighter = NewFighter();
-            EffectResult result = TileRules.Apply(fighter, NewRival(), TileEffect.Sword);
-            Assert.AreEqual(3, fighter.Attack);
-            Assert.AreEqual("+1 ATK", result.Change);
-            Assert.IsTrue(result.Good);
+            fighter.Attack = 4;
+            Fighter rival = NewRival();
+            rival.Defense = 1;
+            EffectResult result = TileRules.Apply(fighter, rival, TileEffect.Sword);
+            Assert.AreEqual(20 - 3, rival.Hp, "4 attack minus 1 defense");
+            Assert.AreEqual("-3 HP", result.OtherChange);
+            Assert.IsFalse(result.OtherChangeOnBase);
             Assert.IsTrue(result.RemoveEffect);
+        }
+
+        [Test]
+        public void Spear_HitsTheOtherBaseWithYourSiegeAndIsUsedUp()
+        {
+            Fighter fighter = NewFighter();
+            fighter.Siege = 3;
+            Fighter rival = NewRival();
+            EffectResult result = TileRules.Apply(fighter, rival, TileEffect.Spear);
+            Assert.AreEqual(10 - 3, rival.BaseHp);
+            Assert.AreEqual(20, rival.Hp, "Only the base is hit");
+            Assert.IsTrue(result.OtherChangeOnBase);
+            Assert.IsTrue(result.RemoveEffect);
+        }
+
+        [Test]
+        public void SkillCards_RaiseAttackOrSiege()
+        {
+            Fighter fighter = NewFighter();
+            int siege = fighter.Siege;
+            TileRules.LearnSkill(fighter, Skill.Blade);
+            Assert.AreEqual(3, fighter.Attack);
+            TileRules.LearnSkill(fighter, Skill.Siege);
+            Assert.AreEqual(siege + 1, fighter.Siege);
+            TileRules.LearnSkill(fighter, Skill.Mastery);
+            Assert.AreEqual(4, fighter.Attack);
+            Assert.AreEqual(siege + 2, fighter.Siege);
+            Assert.IsTrue(TileRules.Apply(fighter, NewRival(), TileEffect.SkillCard).RemoveEffect);
         }
 
         [Test]
@@ -122,10 +156,16 @@ namespace RollOfLegends.Tests
         }
 
         [Test]
-        public void Chest_MakesTheNextCardRare()
+        public void Chest_HoldsALevelHealingArmorOrARareCard()
         {
             Fighter fighter = NewFighter();
-            TileRules.Apply(fighter, NewRival(), TileEffect.Chest);
+            TileRules.OpenChest(fighter, ChestLoot.Level);
+            Assert.AreEqual(2, fighter.Level);
+            TileRules.OpenChest(fighter, ChestLoot.Heal);
+            Assert.AreEqual(20 + TileRules.ChestHeal, fighter.Hp);
+            TileRules.OpenChest(fighter, ChestLoot.Armor);
+            Assert.AreEqual(1, fighter.Defense);
+            TileRules.OpenChest(fighter, ChestLoot.RareCard);
             Assert.IsTrue(fighter.LuckyDraw);
         }
 
@@ -159,18 +199,34 @@ namespace RollOfLegends.Tests
 
         // ---------- Monster fights ----------
 
-        [TestCase(MonsterTier.Small, 5, 5)]
-        [TestCase(MonsterTier.Medium, 3, 4)]
-        [TestCase(MonsterTier.Big, 1, 2)]
-        public void Monster_HasFewerWinningNumbersTheBiggerItIs(MonsterTier tier, int fewest, int most)
+        [TestCase(MonsterTier.Small, 4)]
+        [TestCase(MonsterTier.Medium, 3)]
+        [TestCase(MonsterTier.Big, 1)]
+        public void Monster_PicksFewerWinningNumbersTheBiggerItIs(MonsterTier tier, int count)
         {
             for (int i = 0; i < 100; i++)
             {
                 Monster monster = Monster.Create(tier);
-                Assert.That(monster.WinningNumbers.Length, Is.InRange(fewest, most));
+                Assert.IsEmpty(monster.WinningNumbers, "Numbers are a secret until someone lands on it");
+                Assert.AreEqual(tier.ToString().ToUpper(), monster.LabelText);
+                monster.Reveal();
+                Assert.AreEqual(count, monster.WinningNumbers.Length);
                 CollectionAssert.AllItemsAreUnique(monster.WinningNumbers);
                 foreach (int number in monster.WinningNumbers) Assert.That(number, Is.InRange(1, 6));
             }
+        }
+
+        [Test]
+        public void Fight_ChanceDependsOnTheCard()
+        {
+            var monster = new Monster(MonsterTier.Medium, 1, 3, 4);
+            Assert.AreEqual(2, monster.WinningRolls(new DiceCard(DiceType.Odd, 0), out int odd));
+            Assert.AreEqual(3, odd);
+            Assert.AreEqual(1f, monster.WinChance(new DiceCard(DiceType.Fixed, 4)));
+            Assert.AreEqual(0f, monster.WinChance(new DiceCard(DiceType.Fixed, 6)));
+
+            DiceCard[] hand = { new DiceCard(DiceType.Even, 0), new DiceCard(DiceType.Fixed, 3), new DiceCard(DiceType.Random, 0) };
+            Assert.AreEqual(1, RivalAI.ChooseFightCard(hand, monster), "The rival picks the sure win");
         }
 
         [Test]
@@ -180,7 +236,8 @@ namespace RollOfLegends.Tests
             EffectResult result = TileRules.FightMonster(fighter, new Monster(MonsterTier.Big, 2, 6), 6);
             Assert.IsTrue(result.Good);
             Assert.IsTrue(result.RemoveEffect);
-            Assert.AreEqual(4, fighter.Attack, "Big monster: +2 ATK");
+            Assert.AreEqual(4, fighter.Level, "Big monster: +3 LV");
+            Assert.AreEqual(5, fighter.Attack, "Each level: +1 ATK");
             Assert.AreEqual(23, fighter.Hp, "Big monster: +3 HP");
         }
 
@@ -196,13 +253,25 @@ namespace RollOfLegends.Tests
         }
 
         [Test]
-        public void Fight_SmallMonsterGivesHpAndMediumGivesAttack()
+        public void Fight_BiggerMonstersGiveMoreLevels()
         {
             Fighter fighter = NewFighter();
             TileRules.FightMonster(fighter, new Monster(MonsterTier.Small, 1, 2, 3, 4, 5), 1);
             Assert.AreEqual(23, fighter.Hp);
+            Assert.AreEqual(2, fighter.Level, "Small: +1 LV");
             TileRules.FightMonster(fighter, new Monster(MonsterTier.Medium, 1, 2, 3), 1);
-            Assert.AreEqual(3, fighter.Attack);
+            Assert.AreEqual(4, fighter.Level, "Medium: +2 LV");
+        }
+
+        [Test]
+        public void LevelUp_RaisesAttackAndSiege()
+        {
+            Fighter fighter = NewFighter();
+            int siege = fighter.Siege;
+            fighter.LevelUp(2);
+            Assert.AreEqual(3, fighter.Level);
+            Assert.AreEqual(4, fighter.Attack);
+            Assert.AreEqual(siege + 2, fighter.Siege);
         }
 
         [Test]
@@ -234,6 +303,18 @@ namespace RollOfLegends.Tests
             EffectResult result = TileRules.CastSpell(NewFighter(), rival, Spell.Quake);
             Assert.AreEqual(10 - TileRules.QuakeDamage, rival.BaseHp);
             Assert.IsTrue(result.OtherChangeOnBase);
+        }
+
+        [Test]
+        public void Wisdom_GivesOneToThreeLevels()
+        {
+            for (int i = 0; i < 50; i++)
+            {
+                Fighter caster = NewFighter();
+                EffectResult result = TileRules.CastSpell(caster, NewRival(), Spell.Wisdom);
+                Assert.That(caster.Level, Is.InRange(2, 4));
+                Assert.AreEqual(Spell.Wisdom, result.SpellCast);
+            }
         }
 
         [Test]

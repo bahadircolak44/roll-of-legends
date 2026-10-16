@@ -131,7 +131,47 @@ namespace RollOfLegends.EditorTools
             return button;
         }
 
-        /// <summary>Name and base health on top, hero stats in the middle, active status (e.g. forest) below.</summary>
+        /// <summary>
+        /// The stat icons with their numbers in one row: health, sword attack (vs heroes), spear siege
+        /// (vs bases) and defense. Returns the number texts in that order.
+        /// </summary>
+        private static Text[] CreateStatRow(RectTransform badge)
+        {
+            var row = new GameObject("Stats", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            var rowRect = row.GetComponent<RectTransform>();
+            Place(rowRect, new Vector2(0, 1), new Vector2(1, 1), new Vector2(18, -94), new Vector2(-18, -54), badge);
+            var layout = row.GetComponent<HorizontalLayoutGroup>();
+            layout.spacing = 6f;
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            StatIcon[] icons = { StatIcon.Heart, StatIcon.Sword, StatIcon.Spear, StatIcon.Shield };
+            var numbers = new Text[icons.Length];
+            for (int i = 0; i < icons.Length; i++)
+            {
+                var icon = new GameObject($"{icons[i]}Icon", typeof(RectTransform), typeof(Image), typeof(StatIconImage), typeof(LayoutElement));
+                icon.transform.SetParent(rowRect, false);
+                icon.GetComponent<Image>().raycastTarget = false;
+                icon.GetComponent<StatIconImage>().Icon = icons[i];
+                var iconSize = icon.GetComponent<LayoutElement>();
+                iconSize.preferredWidth = iconSize.preferredHeight = 36f;
+
+                Text number = CreateText(rowRect, $"{icons[i]}Value", "0", 30, TextAnchor.MiddleLeft);
+                number.fontStyle = FontStyle.Bold;
+                number.color = new Color(0.93f, 0.95f, 1f);
+                number.horizontalOverflow = HorizontalWrapMode.Overflow;
+                number.rectTransform.pivot = new Vector2(0f, 0.5f);
+                var numberSize = number.gameObject.AddComponent<LayoutElement>();
+                numberSize.minWidth = 52f; // room for two digits, so the row doesn't jump around
+                numbers[i] = number;
+            }
+            return numbers;
+        }
+
+        /// <summary>Name and level plus base health on top, hero stats in the middle, active status (e.g. forest) below.</summary>
         private static FighterBadge CreateBadge(Transform topBar, string name)
         {
             var badgeObject = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(RoundedImage));
@@ -151,10 +191,7 @@ namespace RollOfLegends.EditorTools
             Place(baseText.rectTransform, new Vector2(0.5f, 1), new Vector2(1, 1), new Vector2(0, -52), new Vector2(-20, -12));
             AddOutline(baseText, 2f);
 
-            Text stats = CreateText(rect, "Stats", "", 28, TextAnchor.UpperLeft);
-            stats.color = new Color(0.93f, 0.95f, 1f);
-            stats.rectTransform.pivot = new Vector2(0f, 0.5f);
-            Place(stats.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(20, -90), new Vector2(-20, -56));
+            Text[] stats = CreateStatRow(rect);
 
             Text status = CreateText(rect, "Status", "", 22, TextAnchor.UpperLeft);
             status.fontStyle = FontStyle.Bold;
@@ -164,7 +201,7 @@ namespace RollOfLegends.EditorTools
             var serialized = new SerializedObject(badge);
             Set(serialized, "_name", nameText);
             Set(serialized, "_base", baseText);
-            Set(serialized, "_stats", stats);
+            SetArray(serialized, "_stats", stats);
             Set(serialized, "_status", status);
             serialized.ApplyModifiedPropertiesWithoutUndo();
             return badge;

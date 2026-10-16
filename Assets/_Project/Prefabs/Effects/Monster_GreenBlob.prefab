@@ -175,6 +175,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: RollOfLegends.Runtime::RollOfLegends.ModelAnimator
   _clip: {fileID: 9061338213343248790, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
   _speed: 1
+  _actions:
+  - {fileID: -7834884072323577149, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
+  - {fileID: 2784886819497288330, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
+  - {fileID: 4447012609936615250, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
+  - {fileID: -7655272897581899170, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
+  - {fileID: 9061338213343248790, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
+  - {fileID: 140615187318258251, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
+  - {fileID: 380537578229758779, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
+  - {fileID: -5599002979973759676, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
+  - {fileID: -8174297497461417188, guid: 90bed1cf368124e09b53180a8237be03, type: 3}
 --- !u!4 &2892051696184543206 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 90bed1cf368124e09b53180a8237be03, type: 3}

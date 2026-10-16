@@ -86,6 +86,7 @@ namespace RollOfLegends.EditorTools
 
             CreateLighting();
             CreateGroundAndBoardPlate();
+            CreateScenery();
             Board board = CreateBoard();
             DiceView dice = CreateDice();
             Transform playerCastle = CreateCastle("PlayerBase", BaseCellPlayer, "KayKit/Hexagon/building_castle_blue.fbx");
@@ -102,6 +103,7 @@ namespace RollOfLegends.EditorTools
             Ui ui = CreateUi();
             Camera camera = CreateCamera(board, ui.Layout);
             FxSpawner fx = CreateFx(ui.PopupLayer);
+            CombatFx combat = CreateCombatFx();
 
             var controller = new GameObject("GameController").AddComponent<GameController>();
             var serialized = new SerializedObject(controller);
@@ -114,6 +116,7 @@ namespace RollOfLegends.EditorTools
             Set(serialized, "_rivalCastle", rivalCastle);
             Set(serialized, "_highlighter", highlighter);
             Set(serialized, "_fx", fx);
+            Set(serialized, "_combat", combat);
             Set(serialized, "_playButton", ui.PlayButton);
             Set(serialized, "_title", ui.Title);
             SetArray(serialized, "_cardSlots", ui.Cards);
@@ -133,7 +136,6 @@ namespace RollOfLegends.EditorTools
         private static class Palette
         {
             public static readonly Color Sky = Hex("#1c2541");
-            public static readonly Color Ground = Hex("#22392f");
             public static readonly Color Wood = Hex("#6e4a2a");
             public static readonly Color Grass = Hex("#7fae5b");
             public static readonly Color TileBase = Hex("#b5a283");
@@ -176,9 +178,9 @@ namespace RollOfLegends.EditorTools
         {
             GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
-            ground.transform.position = new Vector3(0f, BoardTop - 0.16f, 0f);
+            ground.transform.position = new Vector3(0f, BoardTop - 0.7f, 0f); // below the grass hexagons; only seen past them
             ground.transform.localScale = new Vector3(12f, 1f, 12f); // big enough to reach the horizon
-            SetMaterial(ground, "Ground", Palette.Ground, smoothness: 0.1f);
+            SetMaterial(ground, "Sea", SeaColor, smoothness: 0.75f); // the hexagon island floats in a calm sea (see Scenery)
 
             float plateSide = TilesPerSide * TileSpacing + 0.5f;
             GameObject plate = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -364,11 +366,13 @@ namespace RollOfLegends.EditorTools
             }
 
             // Pose the model in its idle animation first, so it is measured the way it will look.
-            AnimationClip idle = FindIdleClip(path);
+            AnimationClip idle = FindIdleClip(path, out AnimationClip[] allClips);
             if (idle != null)
             {
                 idle.SampleAnimation(instance, 0f);
-                instance.AddComponent<ModelAnimator>().Clip = idle;
+                var animator = instance.AddComponent<ModelAnimator>();
+                animator.Clip = idle;
+                animator.Actions = allClips; // attacks, hit reactions, cheering... played once by the game
             }
 
             Bounds bounds = ModelBounds(instance);
@@ -381,13 +385,15 @@ namespace RollOfLegends.EditorTools
             return instance;
         }
 
-        private static AnimationClip FindIdleClip(string modelPath)
+        private static AnimationClip FindIdleClip(string modelPath, out AnimationClip[] allClips)
         {
             var clips = new System.Collections.Generic.Dictionary<string, AnimationClip>();
             foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(modelPath))
             {
                 if (asset is AnimationClip clip && !clip.name.StartsWith("__preview")) clips[clip.name] = clip;
             }
+            allClips = new AnimationClip[clips.Count];
+            clips.Values.CopyTo(allClips, 0);
             foreach (string name in IdleClipNames)
             {
                 if (clips.TryGetValue(name, out AnimationClip clip)) return clip;
@@ -440,11 +446,13 @@ namespace RollOfLegends.EditorTools
             var setups = new (TileEffect effect, int count, GameObject[] prefabs)[]
             {
                 (TileEffect.Sword, 2, new[] { SavePrefab(BuildSword(), "Effects") }),
+                (TileEffect.Spear, 2, new[] { SavePrefab(BuildSpearPickup(), "Effects") }),
+                (TileEffect.SkillCard, 2, new[] { SavePrefab(BuildSkillCard(), "Effects") }),
                 (TileEffect.HealthPotion, 2, new[] { SavePrefab(BuildHealthPotion(), "Effects") }),
-                (TileEffect.RepairElixir, 2, new[] { SavePrefab(BuildRepairElixir(), "Effects") }),
+                (TileEffect.RepairElixir, 1, new[] { SavePrefab(BuildRepairElixir(), "Effects") }),
                 (TileEffect.Shield, 1, new[] { SavePrefab(BuildShield(), "Effects") }),
                 (TileEffect.SpellBook, 2, new[] { SavePrefab(BuildSpellBook(), "Effects") }),
-                (TileEffect.Chest, 1, new[] { SavePrefab(BuildChest(), "Effects") }),
+                (TileEffect.Chest, 2, new[] { SavePrefab(BuildChest(), "Effects") }),
                 (TileEffect.Spikes, 2, new[] { SavePrefab(BuildSpikes(), "Effects") }),
                 (TileEffect.Snare, 1, new[] { SavePrefab(BuildSnare(), "Effects") }),
                 (TileEffect.Forest, 2, new[] { SavePrefab(BuildForest(), "Effects") }),
@@ -501,6 +509,43 @@ namespace RollOfLegends.EditorTools
             return fx;
         }
 
+        /// <summary>
+        /// Battle effects (slashes, fireballs, quakes...). They are made in code at runtime; the builder only
+        /// hands over a glowing particle material, an unlit material and the spear to throw.
+        /// </summary>
+        private static CombatFx CreateCombatFx()
+        {
+            var combat = new GameObject("CombatFx").AddComponent<CombatFx>();
+            var serialized = new SerializedObject(combat);
+            Set(serialized, "_glowMaterial", GetOrCreateGlowMaterial());
+            Set(serialized, "_solidMaterial", GetOrCreateMaterial("Highlight", Color.white, unlit: true));
+
+            var projectile = new GameObject("SpearProjectile");
+            BuildSpearModel(projectile).transform.localScale = Vector3.one * 1.15f;
+            Set(serialized, "_spearPrefab", SavePrefab(projectile, "Fx"));
+
+            var sword = new GameObject("SwordProjectile");
+            PlaceModel(sword, "KayKit/Adventurers/sword_1handed.fbx", height: 0.9f);
+            Set(serialized, "_swordPrefab", SavePrefab(sword, "Fx"));
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            return combat;
+        }
+
+        /// <summary>
+        /// URP's soft round particle material, for every glowing effect (colors come from the effect).
+        /// Reused if it exists, so tweaks made in the Editor survive a rebuild.
+        /// </summary>
+        private static Material GetOrCreateGlowMaterial()
+        {
+            string path = $"{MaterialsFolder}/FxGlow.mat";
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material != null) return material;
+
+            material = new Material(AssetDatabase.LoadAssetAtPath<Material>(ParticleMaterialPath));
+            AssetDatabase.CreateAsset(material, path);
+            return material;
+        }
+
         // ---------- Prefabs (placeholder art made of primitives) ----------
 
         private static GameObject BuildSword()
@@ -509,6 +554,63 @@ namespace RollOfLegends.EditorTools
             GameObject sword = PlaceModel(root, "KayKit/Adventurers/sword_1handed.fbx", height: 1.25f);
             sword.transform.localPosition = new Vector3(0f, 0.15f, 0f);
             Idle(sword, spin: 90f, bob: 0.06f);
+            return root;
+        }
+
+        /// <summary>A floating spear (made from primitives): +1 siege, the damage you deal to bases.</summary>
+        private static GameObject BuildSpearPickup()
+        {
+            var root = new GameObject("Spear");
+            var pivot = new GameObject("Pivot");
+            pivot.transform.SetParent(root.transform, false);
+            pivot.transform.localPosition = new Vector3(0f, 0.6f, 0f);
+            GameObject spear = BuildSpearModel(pivot);
+            spear.transform.localRotation = Quaternion.Euler(-60f, 0f, 0f); // tip up
+            Idle(pivot, spin: 80f, bob: 0.06f);
+            return root;
+        }
+
+        /// <summary>A spear lying along +Z (tip forward): wooden shaft, red binding and a leaf-shaped steel head.</summary>
+        private static GameObject BuildSpearModel(GameObject parent)
+        {
+            var spear = new GameObject("SpearModel");
+            spear.transform.SetParent(parent.transform, false);
+
+            GameObject shaft = Part(spear, PrimitiveType.Cylinder, "Shaft", new Vector3(0f, 0f, -0.05f), new Vector3(0.06f, 0.55f, 0.06f));
+            shaft.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            SetMaterial(shaft, "Bark", Hex("#7a4a26"));
+
+            GameObject binding = Part(spear, PrimitiveType.Cylinder, "Binding", new Vector3(0f, 0f, 0.47f), new Vector3(0.09f, 0.05f, 0.09f));
+            binding.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            SetMaterial(binding, "SpearCloth", Hex("#d23c3c"), smoothness: 0.2f);
+
+            // A cube turned 45 degrees inside a flattened, stretched parent makes a diamond-shaped blade.
+            var head = new GameObject("Head");
+            head.transform.SetParent(spear.transform, false);
+            head.transform.localPosition = new Vector3(0f, 0f, 0.66f);
+            head.transform.localScale = new Vector3(0.17f, 0.05f, 0.32f);
+            GameObject blade = Part(head, PrimitiveType.Cube, "Blade", Vector3.zero, Vector3.one);
+            blade.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
+            SetMaterial(blade, "Spikes", Palette.Spikes, smoothness: 0.8f);
+            return spear;
+        }
+
+        /// <summary>A floating, spinning skill card (made from primitives): +1 attack and/or +1 siege.</summary>
+        private static GameObject BuildSkillCard()
+        {
+            var root = new GameObject("SkillCard");
+            var card = new GameObject("Card");
+            card.transform.SetParent(root.transform, false);
+            card.transform.localPosition = new Vector3(0f, 0.6f, 0f);
+            card.transform.localRotation = Quaternion.Euler(0f, 0f, -12f);
+            SetMaterial(Part(card, PrimitiveType.Cube, "Frame", Vector3.zero, new Vector3(0.5f, 0.7f, 0.04f)), "Gold", Hex("#ffcc33"), smoothness: 0.85f);
+            SetMaterial(Part(card, PrimitiveType.Cube, "Face", Vector3.zero, new Vector3(0.42f, 0.62f, 0.06f)), "SkillCardFace", Hex("#3b2a8c"), smoothness: 0.5f);
+            SetMaterial(Part(card, PrimitiveType.Sphere, "Gem", Vector3.zero, new Vector3(0.18f, 0.18f, 0.09f)), "Gem", Hex("#7fe7ff"), smoothness: 0.95f);
+            foreach (float y in new[] { -0.21f, 0.21f })
+            {
+                SetMaterial(Part(card, PrimitiveType.Cube, "Stripe", new Vector3(0f, y, 0f), new Vector3(0.3f, 0.03f, 0.07f)), "Gold", Hex("#ffcc33"), smoothness: 0.85f);
+            }
+            Idle(card, spin: 90f, bob: 0.07f);
             return root;
         }
 
@@ -703,7 +805,7 @@ namespace RollOfLegends.EditorTools
         {
             var cameraObject = new GameObject("Main Camera") { tag = "MainCamera" };
             var camera = cameraObject.AddComponent<Camera>();
-            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.clearFlags = CameraClearFlags.Skybox; // the gradient sky (see Scenery)
             camera.backgroundColor = Palette.Sky;
             camera.fieldOfView = 38f; // narrower lens = less distortion, so far tiles look as big as near ones
             cameraObject.AddComponent<AudioListener>();

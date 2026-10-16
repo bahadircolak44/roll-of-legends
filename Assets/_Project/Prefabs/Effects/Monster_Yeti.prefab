@@ -1011,6 +1011,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: RollOfLegends.Runtime::RollOfLegends.ModelAnimator
   _clip: {fileID: 9061338213343248790, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
   _speed: 1
+  _actions:
+  - {fileID: 4447012609936615250, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: -5094259538617418458, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: -3663672522963054737, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: 9061338213343248790, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: 140615187318258251, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: 2988316107456685593, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: -7326212992105015716, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: 380537578229758779, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: -4592842328519117816, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: 1395189703230314720, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: -5599002979973759676, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: -9021793991225143758, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: 4023202712368722038, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
+  - {fileID: -8174297497461417188, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
 --- !u!4 &5454472250379774734 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: d4d2e1a0e7e517f41ae9131d1ce91201, type: 3}
