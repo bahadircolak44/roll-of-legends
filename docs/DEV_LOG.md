@@ -7,45 +7,52 @@ _Last updated: 2026-10-16_
 
 ## Current state
 
-**Working** — a playable, polished-looking match against an AI rival in `Assets/_Project/Scenes/Main.unity`:
-- Title screen (ROLL OF LEGENDS + PLAY) over a dimmed board.
-- Square 8x8 board edge = 28 tiles, clockwise, on a wooden plate with a grass courtyard. Your home = tile 0 (START, bottom-left); rival home = tile 14 (RIVAL). Castles with towers/flags; heroes are capsules with eyes (player: crown, rival: horns).
-- **Cards**: hand of 3 themed cards drawn in code — ODD = Sun of Ra (Egypt), EVEN = Zeus (Greece), FIXED n = Dragon, RANDOM = World Tree. **First tap selects** (card lifts + glows, possible landing tiles get a glowing frame with the step count), **second tap rolls**. Tapping another card switches the selection.
-- Turn flow: die spins and lands → hero hops tile by tile (squash on landing) → tile effect → new card. Then the AI rival plays.
-- Rules (`TileRules`): Sword ATK+1, Potion HP+4 (both move elsewhere after use), Spikes HP-3, Snare skip next turn (stay), Monster power 3 (ATK>=3 wins ATK+1, else HP-3). Landing on the other fighter hits for ATK. Passing the enemy home damages its base; passing your own heals 2. HP 0 → home with full HP. Base HP 0 → YOU WIN / YOU LOSE + PLAY AGAIN.
-- Feedback: floating texts (+1 ATK, -3 HP, -2 BASE...), particle bursts, bloom/vignette post-processing, idle bobbing/spinning markers.
-- HUD: top badges (name, animated HP bar, ATK, BASE) for both sides; **HISTORY panel** listing every event with colored names (player name "Bahadır", set on GameController); prompt line above the cards.
-- Responsive layout (`ScreenLayout`): portrait = history under the badges, cards in a bottom row; landscape = history on the left, cards in a right column. `CameraFit` measures these panels and fits the board into the free area.
-- 40 PlayMode tests pass.
+**Working** — a playable match against an AI rival in `Assets/_Project/Scenes/Main.unity`:
+- **Look:** diamond board view (camera turned 45°, pitch 40°): START bottom-middle, RIVAL corner at the top. Free CC0 3D models: KayKit Knight (you) vs Barbarian (rival) with looping idle animations, KayKit blue/red castles, KayKit sword/potion/shield/chest/spike floor, 8 random Quaternius monsters (animated). Spell book and forest trees are primitives.
+- **Stats:** hero HP starts at 20 with **no upper limit**; ATK 2; DEF 0 (each DEF point lowers damage taken, min 1). Base HP starts at 10 (also no upper limit), shown separately in the badge. Knocked out → home with 20 HP.
+- **Cards:** hand of 3, select (landing preview with step count + what's on the tile, e.g. "3 · Forest") then tap again to roll. ODD, EVEN, FIXED n, RANDOM, and rare **DOUBLE** (two dice, 2–12, ~12% of draws; Twin Moons art).
+- **Tile effects** (`TileRules`, counts in `BoardEffects._setups`): Sword +1 ATK, Health Potion +5 HP, Repair Elixir (blue) +3 BASE, Shield +1 DEF, Spell Book (random: Fireball -4 HP to rival ignoring DEF / Earthquake -2 rival BASE / Haste next roll +2), Chest (next card is DOUBLE) — all used up and respawn elsewhere; Spikes -3 HP, Snare skip a turn, Forest next roll -3 (min 1 step), Monster power 3 — these stay.
+- Passing the enemy home damages its base by ATK; passing your own heals 2 HP. Landing on the other hero hits it. Base 0 (also via Earthquake) → YOU WIN / YOU LOSE + PLAY AGAIN.
+- HUD: badges (name, BASE, HP/ATK/DEF, status like "Next roll -3"), HISTORY log with named colored events, prompt line, floating texts, particles, bloom/vignette.
+- Rival AI (standard): picks the card with the best average outcome, aware of all effects and its own roll bonus.
+- **58 PlayMode tests pass** (rules, spells, AI, every effect in the scene, DOUBLE, forest preview, winning, camera framing).
 
 **Not done yet**
-- Difficulty levels (only "standard" AI), sound, real 3D models, saving, Android device build, orientation lock.
+- Difficulty levels, sound, saving, Android device build, orientation lock, hop/attack animations (models only play Idle).
 
 ## Known issues
 
-- Card art is generated on the title screen (~0.4 s per card in the Editor, spread over frames); faster on device with IL2CPP.
-- Long history lines wrap in the narrow landscape panel.
-- Card draw and effect placement are uniform random; balance untested (numbers in `TileRules` and the Inspector).
+- Portrait phones: the diamond view is width-limited, so the board is smaller than in landscape.
+- The Repair Elixir is the KayKit green bottle with a blue-tinted material (the pack has no blue bottle). Spell book and forest are primitive placeholders.
+- Card art is generated on the title screen (~0.4 s per card in the Editor, spread over frames).
+- Balance untested; numbers are in `TileRules` and the `BoardEffects` / `GameController` Inspectors.
 
 ## Next steps
 
-1. User plays and gives feedback; merge PRs #2 → #3 → visual-polish PR (they are stacked).
-2. Ask the user for their idea list (they want to hear suggestions: difficulty levels, new tile types, card abilities...).
-3. Sound effects, a short dice "clack", music.
-4. Replace primitive placeholders with free CC0 models (Kenney, Quaternius) if the user downloads/approves them.
+1. User plays and gives feedback; merge stacked PRs in order: #2 → #3 → #4 → this one.
+2. Use the hero animations (Walk/Jump while hopping, Hit when damaged, Cheer on win) — clips are already imported.
+3. Difficulty levels for the rival (easy = random card, hard = looks two turns ahead).
+4. More content: more monster tiers (weak/strong), character choice (KayKit Mage/Rogue), sounds.
 5. Lock orientation and do a first Android build.
 
 ## Important context
 
-- User is a Unity beginner and speaks Turkish: keep solutions simple and explain Editor steps. Personal hobby project (not published).
+- User is a Unity beginner and speaks Turkish: keep solutions simple and explain Editor steps. Hobby project, but the repo is public — only use assets with clear free licenses (CC0) and ask the user before downloading anything (file, source, size, license).
 - `Main.unity`, the prefabs in `Assets/_Project/Prefabs/{Effects,Fx}` and `Assets/Settings/GameVolumeProfile.asset` are generated by `PrototypeSceneBuilder` (`.cs` = world, `.Ui.cs` = UI; menu **Roll of Legends > Rebuild Prototype Scene**). Rebuilding overwrites manual edits to them. Materials are reused if they exist (delete a `.mat` to get the builder's color back).
-- **No image files**: card faces (`CardArt`), the card glow and rounded UI panels (`UiSprites`, `RoundedImage`) are drawn in code with `Painter` (signed-distance shapes). Keep it that way unless the user provides art.
-- Code map: `Fighter` (one side's state), `TileEffect`/`TileRules`/`EffectResult` (effects), `RivalAI`, `BoardEffects` (random placement + markers), `GameController` (turn flow; `TapCard`/`PlayCard`), `DiceCard`/`CardView`, `DiceView`, `MoveHighlighter` (landing preview), `FxSpawner` (popups/bursts), `EventLog`, `FighterBadge`, `ScreenLayout`, `CameraFit`, `IdleMotion`, `FaceCamera`.
-- Pure rules (`Fighter`, `TileRules`, `RivalAI`, `Dice`, `DiceCard`) have no scene dependencies — test them directly. Scene tests use `GameController.GiveCard` + `BoardEffects.SetEffect` and tap cards twice (select, roll); `Time.timeScale = 6`.
-- Walking order = child order of `Board`; rival home = `TileCount / 2`. Tile numbers are world-space UI at each tile's front edge (don't use TextMesh — it draws through objects in URP).
-- UI uses legacy `UnityEngine.UI.Text` (no TextMeshPro). If you add a UI panel the board must avoid, add it to `ScreenLayout.Obstacles`.
+- **3D models** live in `Assets/_Project/Art/Models` (see `CREDITS.md`). GLB heroes need the glTFast package (`com.unity.cloud.gltfast`). The builder's `PlaceModel` turns models to face the camera, scales them to a height/width, hides unwanted parts (KayKit heroes come holding every weapon), loops an Idle clip via `ModelAnimator`, and swaps glTF materials for URP Lit (glTF's shader multiplies by missing vertex colors → black on some drivers).
+- Camera angle constants: `CameraYaw`/`CameraPitch` in the builder; models use `ModelYaw = 180 + CameraYaw`; tile labels and preview labels are turned by the same yaw.
+- **No image files for 2D art**: card faces (`CardArt`), glow and rounded panels (`UiSprites`) are drawn in code with `Painter`.
+- Code map: `Fighter`, `TileEffect`/`TileRules`/`EffectResult`/`Spell`, `RivalAI`, `Dice`/`DiceCard`, `BoardEffects` (`EffectSetup` list), `GameController` (turn flow; `TapCard`/`PlayCard`/`GiveCard`), `CardView`, `DiceView`, `MoveHighlighter`, `FxSpawner`, `EventLog`, `FighterBadge`, `ScreenLayout`, `CameraFit`, `ModelAnimator`, `IdleMotion`, `FaceCamera`.
+- Pure rules have no scene dependencies — test them directly. Scene tests use `GiveCard` + `BoardEffects.SetEffect` and tap cards twice; `Time.timeScale = 6`.
+- Walking order = child order of `Board`; rival home = `TileCount / 2`. UI uses legacy `UnityEngine.UI.Text`. If you add a UI panel the board must avoid, add it to `ScreenLayout.Obstacles`.
 
 ## History
+
+### 2026-10-16 — CC0 models, diamond camera, gameplay v2
+- User rejected their own AI-generated GLB pack; replaced with CC0 KayKit (heroes, castles, props) + Quaternius (8 monsters) after user approval (~19 MB, Git LFS). Idle animations on heroes and monsters.
+- Camera: START bottom-middle diamond view, lower angle, bigger models.
+- Gameplay: uncapped HP, separate base HP, DEF, health potion vs repair elixir, shield, spell book (3 spells), chest, forest, rare DOUBLE card; preview shows what's on each landing tile.
+- Note: earlier PR text said "40 tests"; that count included a temporary screenshot test (real count was 39).
 
 ### 2026-10-16 — Visual polish, move preview, match history
 - Themed card art drawn in code; select-then-roll with landing tile preview; bigger board/markers and closer camera; responsive portrait/landscape layout.

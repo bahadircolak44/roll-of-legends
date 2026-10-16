@@ -3,28 +3,36 @@ using UnityEngine;
 namespace RollOfLegends
 {
     /// <summary>
-    /// Game state of one side (you or the rival): health, attack, base health and position.
+    /// Game state of one side (you or the rival): hero health, attack, defense, base health and position.
+    /// Health has no upper limit: potions can take it past the starting value.
     /// Plain C# (no scene object) so the rules are easy to test.
     /// </summary>
     public class Fighter
     {
         public readonly string Name;
         public readonly int HomeTile;
-        public readonly int MaxHp;
+        public readonly int StartHp;
 
         public int Hp;
         public int Attack;
+        public int Defense;
         public int BaseHp;
         public int Tile;
         public int SkipTurns;
         public int TurnsTaken;
 
-        public Fighter(string name, int homeTile, int maxHp, int attack, int baseHp)
+        /// <summary>Added to the next roll (forest -3, haste +2), then cleared.</summary>
+        public int NextRollBonus;
+
+        /// <summary>The next card this side draws is a rare DOUBLE card (from a treasure chest).</summary>
+        public bool LuckyDraw;
+
+        public Fighter(string name, int homeTile, int startHp, int attack, int baseHp)
         {
             Name = name;
             HomeTile = homeTile;
-            MaxHp = maxHp;
-            Hp = maxHp;
+            StartHp = startHp;
+            Hp = startHp;
             Attack = attack;
             BaseHp = baseHp;
             Tile = homeTile;
@@ -32,21 +40,51 @@ namespace RollOfLegends
 
         public bool IsKnockedOut => Hp <= 0;
 
-        public void TakeDamage(int amount)
+        /// <summary>Takes damage reduced by Defense (but always at least 1). Returns the damage actually taken.</summary>
+        public int TakeDamage(int amount)
+        {
+            int taken = Mathf.Max(1, amount - Defense);
+            Hp = Mathf.Max(0, Hp - taken);
+            return taken;
+        }
+
+        /// <summary>Damage that goes straight through armor (e.g. magic).</summary>
+        public void TakePiercingDamage(int amount)
         {
             Hp = Mathf.Max(0, Hp - amount);
         }
 
         public void Heal(int amount)
         {
-            Hp = Mathf.Min(MaxHp, Hp + amount);
+            Hp += amount; // no upper limit
         }
 
-        /// <summary>Back to the home base with full health (after being knocked out).</summary>
+        public int DamageBase(int amount)
+        {
+            int taken = Mathf.Min(BaseHp, amount);
+            BaseHp -= taken;
+            return taken;
+        }
+
+        public void RepairBase(int amount)
+        {
+            BaseHp += amount; // no upper limit
+        }
+
+        /// <summary>The number of tiles to move for a roll after bonuses (always at least 1). Clears the bonus.</summary>
+        public int UseRollBonus(int roll)
+        {
+            int steps = Mathf.Max(1, roll + NextRollBonus);
+            NextRollBonus = 0;
+            return steps;
+        }
+
+        /// <summary>Back to the home base with the starting health (after being knocked out).</summary>
         public void Respawn()
         {
-            Hp = MaxHp;
+            Hp = StartHp;
             Tile = HomeTile;
+            NextRollBonus = 0;
         }
     }
 }

@@ -131,7 +131,7 @@ namespace RollOfLegends.EditorTools
             return button;
         }
 
-        /// <summary>Name, health bar, attack and base health of one side.</summary>
+        /// <summary>Name and base health on top, hero stats in the middle, active status (e.g. forest) below.</summary>
         private static FighterBadge CreateBadge(Transform topBar, string name)
         {
             var badgeObject = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(RoundedImage));
@@ -142,36 +142,30 @@ namespace RollOfLegends.EditorTools
 
             Text nameText = CreateText(rect, "Name", "", 34, TextAnchor.UpperLeft);
             nameText.fontStyle = FontStyle.Bold;
-            Place(nameText.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(20, -52), new Vector2(-20, -12));
+            Place(nameText.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(20, -52), new Vector2(-20, -10));
 
-            var barBack = new GameObject("HpBar", typeof(RectTransform), typeof(Image), typeof(RoundedImage));
-            var barRect = barBack.GetComponent<RectTransform>();
-            barRect.SetParent(rect, false);
-            barBack.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
-            barBack.GetComponent<Image>().pixelsPerUnitMultiplier = 2f; // smaller rounded corners
-            Place(barRect, new Vector2(0, 1), new Vector2(1, 1), new Vector2(20, -88), new Vector2(-20, -58));
+            // Base health: its own big, castle-colored number in the top-right corner.
+            Text baseText = CreateText(rect, "Base", "", 32, TextAnchor.UpperRight);
+            baseText.color = new Color(1f, 0.72f, 0.35f);
+            baseText.rectTransform.pivot = new Vector2(1f, 1f);
+            Place(baseText.rectTransform, new Vector2(0.5f, 1), new Vector2(1, 1), new Vector2(0, -52), new Vector2(-20, -12));
+            AddOutline(baseText, 2f);
 
-            var fill = new GameObject("Fill", typeof(RectTransform), typeof(Image), typeof(RoundedImage));
-            var fillRect = fill.GetComponent<RectTransform>();
-            fillRect.SetParent(barRect, false);
-            fill.GetComponent<Image>().color = new Color(0.3f, 0.85f, 0.45f);
-            fill.GetComponent<Image>().pixelsPerUnitMultiplier = 2f;
-            Place(fillRect, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            Text stats = CreateText(rect, "Stats", "", 28, TextAnchor.UpperLeft);
+            stats.color = new Color(0.93f, 0.95f, 1f);
+            stats.rectTransform.pivot = new Vector2(0f, 0.5f);
+            Place(stats.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(20, -90), new Vector2(-20, -56));
 
-            Text hpText = CreateText(barRect, "HpText", "", 22, TextAnchor.MiddleCenter);
-            hpText.fontStyle = FontStyle.Bold;
-            AddOutline(hpText, 2f);
-
-            Text stats = CreateText(rect, "Stats", "", 26, TextAnchor.UpperLeft);
-            stats.color = new Color(0.9f, 0.92f, 1f);
-            Place(stats.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(20, -124), new Vector2(-20, -94));
+            Text status = CreateText(rect, "Status", "", 22, TextAnchor.UpperLeft);
+            status.fontStyle = FontStyle.Bold;
+            Place(status.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(20, -122), new Vector2(-20, -94));
 
             var badge = badgeObject.AddComponent<FighterBadge>();
             var serialized = new SerializedObject(badge);
             Set(serialized, "_name", nameText);
-            Set(serialized, "_hpText", hpText);
-            Set(serialized, "_hpFill", fillRect);
+            Set(serialized, "_base", baseText);
             Set(serialized, "_stats", stats);
+            Set(serialized, "_status", status);
             serialized.ApplyModifiedPropertiesWithoutUndo();
             return badge;
         }

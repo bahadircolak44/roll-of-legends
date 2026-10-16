@@ -8,6 +8,9 @@ namespace RollOfLegends
     /// </summary>
     public readonly struct DiceCard
     {
+        /// <summary>Chance that a normal draw is the rare DOUBLE card.</summary>
+        public const float RareChance = 0.12f;
+
         public readonly DiceType Type;
         public readonly int FixedValue;
 
@@ -17,12 +20,24 @@ namespace RollOfLegends
             FixedValue = fixedValue;
         }
 
-        /// <summary>Draws a random card: any dice type, and a random number 1-6 for Fixed cards.</summary>
+        /// <summary>Draws a random card: usually a common type (a Fixed card gets a random 1-6), sometimes a rare DOUBLE.</summary>
         public static DiceCard Draw()
         {
+            if (Random.value < RareChance) return DrawRare();
             DiceType type = Dice.RandomType();
             int fixedValue = type == DiceType.Fixed ? Random.Range(1, 7) : 0;
             return new DiceCard(type, fixedValue);
+        }
+
+        public static DiceCard DrawRare()
+        {
+            return new DiceCard(DiceType.Double, 0);
+        }
+
+        /// <summary>Each die thrown (two for a DOUBLE).</summary>
+        public int[] RollDice()
+        {
+            return Dice.RollDice(Type, FixedValue);
         }
 
         public int Roll()

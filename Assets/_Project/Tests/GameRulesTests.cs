@@ -41,7 +41,7 @@ namespace RollOfLegends.Tests
         }
 
         [Test]
-        public void RandomType_PicksAllFourDiceTypes()
+        public void RandomType_PicksAllFourCommonDiceTypes()
         {
             var seen = new HashSet<DiceType>();
             for (int i = 0; i < Samples; i++)
@@ -67,8 +67,30 @@ namespace RollOfLegends.Tests
                     fixedNumbers.Add(card.FixedValue);
                 }
             }
-            Assert.AreEqual(4, types.Count, "All four card types should be drawn");
+            Assert.AreEqual(5, types.Count, "All four common types and the rare DOUBLE should be drawn");
             Assert.AreEqual(6, fixedNumbers.Count, "Fixed cards should cover every number 1-6");
+        }
+
+        [Test]
+        public void Double_RollsTwoDiceForATotalOfTwoToTwelve()
+        {
+            var totals = new HashSet<int>();
+            for (int i = 0; i < Samples * 3; i++)
+            {
+                int[] dice = Dice.RollDice(DiceType.Double, 0);
+                Assert.AreEqual(2, dice.Length);
+                Assert.That(dice[0], Is.InRange(1, 6));
+                Assert.That(dice[1], Is.InRange(1, 6));
+                totals.Add(dice[0] + dice[1]);
+            }
+            Assert.AreEqual(11, totals.Count, "Every total from 2 to 12 should come up");
+            Assert.AreEqual(36, Dice.PossibleValues(DiceType.Double, 0).Length);
+        }
+
+        [Test]
+        public void RareCard_IsDouble()
+        {
+            Assert.AreEqual(DiceType.Double, DiceCard.DrawRare().Type);
         }
 
         [TestCase(0, 6, 14, 6)]

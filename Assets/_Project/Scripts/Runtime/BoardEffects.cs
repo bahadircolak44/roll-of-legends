@@ -1,29 +1,28 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace RollOfLegends
 {
     /// <summary>
-    /// Scatters swords, potions, traps and monsters randomly over the tiles and shows a marker
-    /// (prefab) on each. Swap a prefab's contents to change how an effect looks.
+    /// Scatters pickups, traps, terrain and monsters randomly over the tiles and shows a marker (prefab)
+    /// on each. Swap a prefab's contents to change how an effect looks.
     /// </summary>
     public class BoardEffects : MonoBehaviour
     {
+        [Serializable]
+        public class EffectSetup
+        {
+            public TileEffect Effect;
+            [Tooltip("How many tiles get this effect at the start of a game.")]
+            public int Count;
+            [Tooltip("Looks for this effect; one is picked at random each time (e.g. different monsters).")]
+            public GameObject[] Prefabs;
+        }
+
         [SerializeField] private Board _board;
-
-        [Header("Marker prefabs")]
-        [SerializeField] private GameObject _swordPrefab;
-        [SerializeField] private GameObject _potionPrefab;
-        [SerializeField] private GameObject _spikesPrefab;
-        [SerializeField] private GameObject _snarePrefab;
-        [SerializeField] private GameObject _monsterPrefab;
-
-        [Header("How many of each at the start of a game")]
-        [SerializeField] private int _swords = 3;
-        [SerializeField] private int _potions = 3;
-        [SerializeField] private int _spikes = 3;
-        [SerializeField] private int _snares = 2;
-        [SerializeField] private int _monsters = 3;
+        [SerializeField] private EffectSetup[] _setups = new EffectSetup[0];
 
         private TileEffect[] _effects = new TileEffect[0];
         private GameObject[] _markers = new GameObject[0];
@@ -57,11 +56,10 @@ namespace RollOfLegends
             _protectedTiles.Clear();
             _protectedTiles.UnionWith(protectedTiles);
 
-            PlaceRandomly(TileEffect.Sword, _swords);
-            PlaceRandomly(TileEffect.Potion, _potions);
-            PlaceRandomly(TileEffect.Spikes, _spikes);
-            PlaceRandomly(TileEffect.Snare, _snares);
-            PlaceRandomly(TileEffect.Monster, _monsters);
+            foreach (EffectSetup setup in _setups)
+            {
+                PlaceRandomly(setup.Effect, setup.Count);
+            }
         }
 
         public void SetEffect(int tile, TileEffect effect)
@@ -77,7 +75,7 @@ namespace RollOfLegends
             if (prefab != null)
             {
                 Transform tileTransform = _board.transform.GetChild(tile);
-                _markers[tile] = Instantiate(prefab, tileTransform.position + new Vector3(0f, 0f, 0.12f), prefab.transform.rotation, tileTransform);
+                _markers[tile] = Instantiate(prefab, tileTransform.position, prefab.transform.rotation, tileTransform);
             }
         }
 
@@ -118,15 +116,14 @@ namespace RollOfLegends
 
         private GameObject PrefabFor(TileEffect effect)
         {
-            switch (effect)
+            foreach (EffectSetup setup in _setups)
             {
-                case TileEffect.Sword: return _swordPrefab;
-                case TileEffect.Potion: return _potionPrefab;
-                case TileEffect.Spikes: return _spikesPrefab;
-                case TileEffect.Snare: return _snarePrefab;
-                case TileEffect.Monster: return _monsterPrefab;
-                default: return null;
+                if (setup.Effect == effect && setup.Prefabs != null && setup.Prefabs.Length > 0)
+                {
+                    return setup.Prefabs[Random.Range(0, setup.Prefabs.Length)];
+                }
             }
+            return null;
         }
     }
 }

@@ -21,6 +21,8 @@ namespace RollOfLegends
         private static readonly Color LossColor = new Color(1f, 0.38f, 0.35f);
         private static readonly Color BaseHitColor = new Color(1f, 0.6f, 0.2f);
         private static readonly Color SkipColor = new Color(0.8f, 0.65f, 1f);
+        private static readonly Color SpellColor = new Color(0.85f, 0.6f, 1f);
+        private static readonly Vector3 AboveHead = Vector3.up * 1.5f; // where floating texts start
 
         [Header("Scene objects")]
         [SerializeField] private Board _board;
@@ -49,14 +51,14 @@ namespace RollOfLegends
         [Header("Starting stats (both sides)")]
         [SerializeField] private int _startHp = 20;
         [SerializeField] private int _startAttack = 2;
-        [SerializeField] private int _baseHp = 8;
+        [SerializeField] private int _baseHp = 10;
 
         [Header("Movement and pacing")]
         [Tooltip("How far above the tile the heroes' centers stand.")]
         [SerializeField] private float _heroHeight = 0.62f;
 
         [Tooltip("Sideways offset so both heroes stay visible on the same tile.")]
-        [SerializeField] private float _heroSideOffset = 0.27f;
+        [SerializeField] private float _heroSideOffset = 0.3f;
 
         [Tooltip("Seconds for one hop from a tile to the next.")]
         [SerializeField] private float _hopDuration = 0.3f;
@@ -76,7 +78,11 @@ namespace RollOfLegends
         public Fighter Player { get; private set; }
         public Fighter Rival { get; private set; }
         public IReadOnlyList<DiceCard> Hand => _hand;
+        /// <summary>The total rolled last turn (before forest/haste bonuses).</summary>
         public int LastRoll { get; private set; }
+
+        /// <summary>How many tiles the last mover actually moved (roll plus bonuses, at least 1).</summary>
+        public int LastSteps { get; private set; }
         public DiceCard LastCard { get; private set; }
         public bool IsGameOver { get; private set; }
 
@@ -122,7 +128,7 @@ namespace RollOfLegends
         /// <summary>Draws the card pictures one per frame on the title screen, so the game never stutters later.</summary>
         private IEnumerator PrepareCardArt()
         {
-            foreach (DiceType type in new[] { DiceType.Odd, DiceType.Even, DiceType.Fixed, DiceType.Random })
+            foreach (DiceType type in new[] { DiceType.Odd, DiceType.Even, DiceType.Fixed, DiceType.Random, DiceType.Double })
             {
                 CardArt.Get(type);
                 yield return null;
@@ -183,8 +189,28 @@ namespace RollOfLegends
                 _cardSlots[i].SetSelected(i == slot);
             }
             DiceCard card = _hand[slot];
-            _highlighter.Show(Player.Tile, Dice.PossibleValues(card.Type, card.FixedValue), CardArt.AccentColor(card.Type));
-            Say($"Tap {CardArt.Title(card.Type)} again to roll!");
+            ShowLandingPreview(card);
+            string bonus = Player.NextRollBonus == 0 ? "" : $" (next roll {Player.NextRollBonus:+#;-#})";
+            Say($"Tap {CardArt.Title(card.Type)} again to roll!{bonus}");
+        }
+
+        /// <summary>Highlights every tile this card could take you to, and names what is waiting there.</summary>
+        private void ShowLandingPreview(DiceCard card)
+        {
+            var steps = new SortedSet<int>();
+            foreach (int roll in Dice.PossibleValues(card.Type, card.FixedValue))
+            {
+                steps.Add(Mathf.Max(1, roll + Player.NextRollBonus));
+            }
+
+            var stepList = new List<int>(steps);
+            var notes = new string[stepList.Count];
+            for (int i = 0; i < stepList.Count; i++)
+            {
+                int tile = Board.Advance(Player.Tile, stepList[i], _board.TileCount);
+                notes[i] = tile == Rival.Tile ? "Attack!" : TileRules.ShortName(_effects.GetEffect(tile));
+            }
+            _highlighter.Show(Player.Tile, stepList.ToArray(), CardArt.AccentColor(card.Type), notes);
         }
 
         /// <summary>Plays a card right away (the second tap of TapCard).</summary>
@@ -254,9 +280,9 @@ namespace RollOfLegends
                 {
                     int slot = RivalAI.ChooseCard(_rivalHand, Rival, Player, _effects.GetEffect, _board.TileCount);
                     DiceCard card = _rivalHand[slot];
-                    _rivalHand[slot] = DiceCard.Draw();
                     yield return TakeTurn(Rival, Player, card);
                     if (IsGameOver) yield break;
+                    _rivalHand[slot] = DrawFor(Rival);
                 }
 
                 if (Player.SkipTurns == 0) yield break;
@@ -271,15 +297,31 @@ namespace RollOfLegends
         {
             mover.TurnsTaken++;
             LastCard = card;
-            LastRoll = card.Roll();
+            int[] dice = card.RollDice();
+            LastRoll = 0;
 
             Say($"{mover.Name} plays {CardArt.Title(card.Type)}...");
-            yield return _dice.Roll(LastRoll);
-            Log($"{NameOf(mover)} played {CardTag(card)} → rolled <b>{LastRoll}</b>");
+            foreach (int die in dice)
+            {
+                yield return _dice.Roll(die); // a DOUBLE card throws the die twice
+                LastRoll += die;
+            }
+            string rolled = dice.Length > 1 ? $"{string.Join(" + ", dice)} = <b>{LastRoll}</b>" : $"<b>{LastRoll}</b>";
+            Log($"{NameOf(mover)} played {CardTag(card)} → rolled {rolled}");
+
+            int bonus = mover.NextRollBonus;
+            LastSteps = mover.UseRollBonus(LastRoll);
+            if (bonus != 0)
+            {
+                Color bonusColor = bonus < 0 ? LossColor : GainColor;
+                _fx.Popup(ViewOf(mover).position + AboveHead, $"MOVE {LastSteps}", bonusColor);
+                Log($"{NameOf(mover)}'s roll changes by <color=#{Hex(bonusColor)}>{bonus:+#;-#}</color>: moves {LastSteps}");
+                UpdateBadges();
+            }
             yield return new WaitForSeconds(_pauseAfterDice);
 
             Transform view = ViewOf(mover);
-            for (int step = 0; step < LastRoll; step++)
+            for (int step = 0; step < LastSteps; step++)
             {
                 mover.Tile = Board.Advance(mover.Tile, 1, _board.TileCount);
                 yield return HopTo(view, PositionOn(mover));
@@ -287,11 +329,11 @@ namespace RollOfLegends
 
                 if (mover.Tile == other.HomeTile)
                 {
-                    other.BaseHp = Mathf.Max(0, other.BaseHp - mover.Attack);
+                    int damage = other.DamageBase(mover.Attack);
                     Transform castle = CastleOf(other);
-                    _fx.Popup(castle.position + Vector3.up * 1.6f, $"-{mover.Attack} BASE", BaseHitColor);
-                    _fx.Burst(castle.position + Vector3.up * 0.8f, BaseHitColor);
-                    Log($"{NameOf(mover)} hit {NameOf(other)}'s base: <color=#{Hex(BaseHitColor)}>-{mover.Attack}</color> ({other.BaseHp} left)");
+                    _fx.Popup(castle.position + Vector3.up * 2.2f, $"-{damage} BASE", BaseHitColor);
+                    _fx.Burst(castle.position + Vector3.up * 1f, BaseHitColor);
+                    Log($"{NameOf(mover)} hit {NameOf(other)}'s base: <color=#{Hex(BaseHitColor)}>-{damage}</color> ({other.BaseHp} left)");
                     UpdateBadges();
                     if (other.BaseHp == 0)
                     {
@@ -299,10 +341,10 @@ namespace RollOfLegends
                         yield break;
                     }
                 }
-                else if (mover.Tile == mover.HomeTile && mover.Hp < mover.MaxHp)
+                else if (mover.Tile == mover.HomeTile)
                 {
                     mover.Heal(TileRules.PassHomeHeal);
-                    _fx.Popup(view.position + Vector3.up, $"+{TileRules.PassHomeHeal} HP", GainColor);
+                    _fx.Popup(view.position + AboveHead, $"+{TileRules.PassHomeHeal} HP", GainColor);
                     Log($"{NameOf(mover)} passed home: <color=#{Hex(GainColor)}>+{TileRules.PassHomeHeal} HP</color>");
                     UpdateBadges();
                 }
@@ -310,6 +352,11 @@ namespace RollOfLegends
 
             ResolveLanding(mover, other);
             UpdateBadges();
+            if (other.BaseHp == 0) // e.g. an earthquake spell
+            {
+                EndGame(mover == Player);
+                yield break;
+            }
             yield return new WaitForSeconds(_messagePause);
         }
 
@@ -317,24 +364,34 @@ namespace RollOfLegends
         {
             if (mover.Tile == other.Tile)
             {
-                other.TakeDamage(mover.Attack);
+                int damage = other.TakeDamage(mover.Attack);
                 Transform target = ViewOf(other);
-                _fx.Popup(target.position + Vector3.up, $"-{mover.Attack} HP", LossColor);
+                _fx.Popup(target.position + AboveHead, $"-{damage} HP", LossColor);
                 _fx.Burst(target.position, LossColor);
-                Log($"{NameOf(mover)} attacked {NameOf(other)}: <color=#{Hex(LossColor)}>-{mover.Attack} HP</color>");
+                Log($"{NameOf(mover)} attacked {NameOf(other)}: <color=#{Hex(LossColor)}>-{damage} HP</color>");
                 if (other.IsKnockedOut) KnockOut(other);
                 return;
             }
 
             TileEffect effect = _effects.GetEffect(mover.Tile);
-            EffectResult result = TileRules.Apply(mover, effect);
+            EffectResult result = TileRules.Apply(mover, other, effect);
             if (!result.HasEffect) return;
 
             Color color = ChangeColor(result);
             Transform view = ViewOf(mover);
-            _fx.Popup(view.position + Vector3.up, result.Change, color);
+            _fx.Popup(view.position + AboveHead, result.Change, color);
             _fx.Burst(_board.GetTilePosition(mover.Tile) + Vector3.up * 0.4f, color);
-            Log($"{NameOf(mover)} {result.Description}: <color=#{Hex(color)}>{result.Change}</color>");
+            string extra = result.OtherChange != null ? $" (<color=#{Hex(LossColor)}>{result.OtherChange}</color>)" : "";
+            Log($"{NameOf(mover)} {result.Description}: <color=#{Hex(color)}>{result.Change}</color>{extra}");
+
+            if (result.OtherChange != null)
+            {
+                // A spell hit the other side: show it over their hero or their castle.
+                Vector3 at = result.OtherChangeOnBase ? CastleOf(other).position + Vector3.up * 2.2f : ViewOf(other).position + AboveHead;
+                _fx.Popup(at, result.OtherChange, result.OtherChangeOnBase ? BaseHitColor : LossColor);
+                _fx.Burst(at - Vector3.up, LossColor);
+                if (other.IsKnockedOut) KnockOut(other);
+            }
 
             if (result.RemoveEffect)
             {
@@ -347,8 +404,8 @@ namespace RollOfLegends
         {
             fighter.Respawn();
             PlaceView(fighter);
-            _fx.Popup(ViewOf(fighter).position + Vector3.up, "KNOCKED OUT", LossColor);
-            Log($"{NameOf(fighter)} was <color=#{Hex(LossColor)}>knocked out</color> and returns home with full HP");
+            _fx.Popup(ViewOf(fighter).position + AboveHead, "KNOCKED OUT", LossColor);
+            Log($"{NameOf(fighter)} was <color=#{Hex(LossColor)}>knocked out</color> and returns home with {fighter.StartHp} HP");
         }
 
         private void EndGame(bool playerWon)
@@ -368,8 +425,16 @@ namespace RollOfLegends
 
         private void DrawInto(int slot)
         {
-            _hand[slot] = DiceCard.Draw();
+            _hand[slot] = DrawFor(Player);
             _cardSlots[slot].Show(_hand[slot]);
+        }
+
+        /// <summary>A random card, or the rare DOUBLE if this side opened a treasure chest.</summary>
+        private static DiceCard DrawFor(Fighter fighter)
+        {
+            if (!fighter.LuckyDraw) return DiceCard.Draw();
+            fighter.LuckyDraw = false;
+            return DiceCard.DrawRare();
         }
 
         private void SetCardsInteractable(bool interactable)
@@ -421,10 +486,13 @@ namespace RollOfLegends
             ViewOf(fighter).position = PositionOn(fighter);
         }
 
+        /// <summary>The fighter's spot on its tile: you stand a little to the left, the rival to the right (as seen by the camera).</summary>
         private Vector3 PositionOn(Fighter fighter)
         {
+            Camera camera = Camera.main;
+            Vector3 right = camera != null ? Vector3.ProjectOnPlane(camera.transform.right, Vector3.up).normalized : Vector3.right;
             float side = fighter == Player ? -_heroSideOffset : _heroSideOffset;
-            return _board.GetTilePosition(fighter.Tile) + new Vector3(side, _heroHeight, 0f);
+            return _board.GetTilePosition(fighter.Tile) + right * side + Vector3.up * _heroHeight;
         }
 
         private void UpdateBadges()
@@ -456,8 +524,11 @@ namespace RollOfLegends
 
         private static Color ChangeColor(EffectResult result)
         {
-            if (!result.Good) return result.Change.Contains("SKIP") ? SkipColor : LossColor;
-            return result.Change.Contains("ATK") ? AttackColor : GainColor;
+            if (!result.Good) return result.Change.Contains("SKIP") || result.Change.Contains("ROLL") ? SkipColor : LossColor;
+            if (result.Change.Contains("ATK") || result.Change.Contains("DEF")) return AttackColor;
+            if (result.Change.Contains("BASE")) return BaseHitColor;
+            if (result.Change.Contains("!")) return SpellColor;
+            return GainColor;
         }
 
         private static string Hex(Color color)

@@ -6,7 +6,8 @@ namespace RollOfLegends
 {
     /// <summary>
     /// Themed card faces, drawn in code the first time they are needed:
-    /// ODD = Sun of Ra (Egypt), EVEN = Zeus (Greece), FIXED = Dragon, RANDOM = World Tree.
+    /// ODD = Sun of Ra (Egypt), EVEN = Zeus (Greece), FIXED = Dragon, RANDOM = World Tree,
+    /// DOUBLE (rare) = Twin Moons.
     /// The card's title and numbers are UI text on top of this picture (see CardView).
     /// </summary>
     public static class CardArt
@@ -57,6 +58,7 @@ namespace RollOfLegends
                 case DiceType.Odd: return "ODD";
                 case DiceType.Even: return "EVEN";
                 case DiceType.Fixed: return "FIXED";
+                case DiceType.Double: return "DOUBLE";
                 default: return "RANDOM";
             }
         }
@@ -68,6 +70,7 @@ namespace RollOfLegends
                 case DiceType.Odd: return "Sun of Ra";
                 case DiceType.Even: return "Zeus";
                 case DiceType.Fixed: return "Dragon";
+                case DiceType.Double: return "Twin Moons";
                 default: return "World Tree";
             }
         }
@@ -80,6 +83,7 @@ namespace RollOfLegends
                 case DiceType.Odd: return Hex("#ffc94a");
                 case DiceType.Even: return Hex("#8fd3ff");
                 case DiceType.Fixed: return Hex("#ff7a45");
+                case DiceType.Double: return Hex("#d59bff");
                 default: return Hex("#9be15d");
             }
         }
@@ -92,6 +96,7 @@ namespace RollOfLegends
                 case DiceType.Odd: return Hex("#4a2a00");
                 case DiceType.Even: return Hex("#123a6b");
                 case DiceType.Fixed: return Hex("#fff1d6");
+                case DiceType.Double: return Hex("#3a1660");
                 default: return Hex("#1f4a12");
             }
         }
@@ -103,6 +108,7 @@ namespace RollOfLegends
                 case DiceType.Odd: return DrawSunOfRa();
                 case DiceType.Even: return DrawZeus();
                 case DiceType.Fixed: return DrawDragon();
+                case DiceType.Double: return DrawTwinMoons();
                 default: return DrawWorldTree();
             }
         }
@@ -388,6 +394,66 @@ namespace RollOfLegends
             painter.Glow(outer, WithAlpha(Hex("#ffb347"), 0.5f), 10f, area);
             painter.Fill(outer, Hex("#ff6a2b"), area);
             painter.Fill(inner, Hex("#ffd166"), area);
+        }
+
+        // ---------- DOUBLE (rare): Twin Moons ----------
+
+        private static Texture2D DrawTwinMoons()
+        {
+            Painter painter = StartCard(Hex("#f7e6ff"), Hex("#8d5cc4"), Hex("#2a1457"), Hex("#6b3fb3"));
+
+            // Starry night with a soft glow.
+            var random = new System.Random(11);
+            for (int i = 0; i < 30; i++)
+            {
+                var star = new Vector2(20 + random.Next(216), 96 + random.Next(190));
+                float size = 0.8f + (float)random.NextDouble() * 1.6f;
+                painter.Fill(Circle(star, size), WithAlpha(Color.white, 0.8f), Around(star, 5));
+            }
+            painter.Glow(Circle(new Vector2(128, 196), 40f), WithAlpha(Hex("#e4c6ff"), 0.4f), 80f, new Rect(9, 90, Width - 18, 200));
+
+            // Two crescent moons facing each other, each with a sleepy smile.
+            DrawCrescent(painter, new Vector2(92, 208), 42f, facingRight: true);
+            DrawCrescent(painter, new Vector2(164, 180), 42f, facingRight: false);
+
+            // Sparkly four-pointed stars between them.
+            Sparkle(painter, new Vector2(128, 238), 12f);
+            Sparkle(painter, new Vector2(60, 130), 8f);
+            Sparkle(painter, new Vector2(200, 250), 7f);
+
+            // Clouds along the bottom.
+            Shape clouds = Union(
+                Circle(new Vector2(40, 98), 22f), Circle(new Vector2(78, 92), 18f), Circle(new Vector2(128, 96), 24f),
+                Circle(new Vector2(178, 92), 18f), Circle(new Vector2(216, 98), 22f), RoundedRect(new Rect(9, 76, Width - 18, 22), 0f));
+            painter.Fill(Intersect(clouds, InnerShape), VerticalGradient(76, Hex("#a17fd6"), 120, Hex("#e9dcff")));
+
+            FinishCard(painter, Hex("#e8c8ff"), Hex("#f7e8ff"), Hex("#c49ae8"));
+            return painter.ToTexture();
+        }
+
+        private static void DrawCrescent(Painter painter, Vector2 center, float radius, bool facingRight)
+        {
+            float side = facingRight ? 1f : -1f;
+            Shape moon = Subtract(Circle(center, radius), Circle(center + new Vector2(side * radius * 0.55f, radius * 0.15f), radius * 0.85f));
+            Rect area = Around(center, radius + 12);
+            painter.Glow(moon, WithAlpha(Hex("#fff4b8"), 0.45f), 10f, area);
+            painter.Fill(moon, RadialGradient(center - new Vector2(side * 18, -14), radius * 1.6f, Hex("#fffbe0"), Hex("#ffd45c")), area);
+
+            // A sleepy closed eye and a small smile on the thick part of the crescent.
+            Vector2 face = center - new Vector2(side * radius * 0.52f, 0);
+            painter.Fill(Arc(face + new Vector2(0, 6), 5f, 200f, 340f, 3f), Hex("#7a4a00"), area);
+            painter.Fill(Arc(face + new Vector2(side * 2, -10), 6f, 210f, 330f, 2.8f), Hex("#7a4a00"), area);
+            painter.Fill(Ellipse(face + new Vector2(-side * 4, -3), new Vector2(5, 3)), Hex("#ff7b9c", 0.55f), area);
+        }
+
+        private static void Sparkle(Painter painter, Vector2 at, float size)
+        {
+            Shape star = Polygon(
+                at + new Vector2(0, size), at + new Vector2(size * 0.25f, size * 0.25f), at + new Vector2(size, 0),
+                at + new Vector2(size * 0.25f, -size * 0.25f), at + new Vector2(0, -size), at + new Vector2(-size * 0.25f, -size * 0.25f),
+                at + new Vector2(-size, 0), at + new Vector2(-size * 0.25f, size * 0.25f));
+            painter.Glow(star, WithAlpha(Color.white, 0.5f), 6f, Around(at, size + 8));
+            painter.Fill(star, Hex("#fffbe8"), Around(at, size + 2));
         }
 
         // ---------- RANDOM: World Tree ----------
