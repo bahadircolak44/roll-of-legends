@@ -39,6 +39,22 @@ namespace RollOfLegends
             }
         }
 
+        /// <summary>Every number this dice type can roll.</summary>
+        public static int[] PossibleValues(DiceType type, int fixedValue)
+        {
+            switch (type)
+            {
+                case DiceType.Odd:
+                    return OddFaces;
+                case DiceType.Even:
+                    return EvenFaces;
+                case DiceType.Fixed:
+                    return new[] { Mathf.Clamp(fixedValue, 1, 6) };
+                default:
+                    return new[] { 1, 2, 3, 4, 5, 6 };
+            }
+        }
+
         public static string Describe(DiceType type, int fixedValue)
         {
             switch (type)

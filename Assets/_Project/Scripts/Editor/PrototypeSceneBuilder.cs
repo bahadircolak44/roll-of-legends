@@ -26,12 +26,25 @@ namespace RollOfLegends.EditorTools
         private const float DiceSize = 1.2f;
 
         private const int HandSize = 3;
+        private const string PrefabsFolder = "Assets/_Project/Prefabs/Effects";
+
+        // Castles sit inside the loop on the diagonal toward each side's home corner (START and the opposite
+        // corner), far enough in that they don't hide tiles from the tilted camera.
+        private static readonly Vector2Int BaseCellPlayer = new Vector2Int(2, 2);
+        private static readonly Vector2Int BaseCellRival = new Vector2Int(TilesPerSide - 3, TilesPerSide - 3);
         private static readonly Vector2 CardSize = new Vector2(200f, 260f);
         private const float CardGap = 30f;
 
         private static readonly Color TileColor = new Color(0.93f, 0.89f, 0.80f);
         private static readonly Color StartTileColor = new Color(0.45f, 0.80f, 0.45f);
-        private static readonly Color HeroColor = new Color(0.20f, 0.45f, 0.95f);
+        private static readonly Color PlayerColor = new Color(0.20f, 0.45f, 0.95f);
+        private static readonly Color RivalColor = new Color(0.90f, 0.25f, 0.20f);
+        private static readonly Color RivalTileColor = new Color(0.95f, 0.55f, 0.50f);
+        private static readonly Color SwordColor = new Color(1.00f, 0.75f, 0.20f);
+        private static readonly Color PotionColor = new Color(0.30f, 0.85f, 0.40f);
+        private static readonly Color SpikesColor = new Color(0.55f, 0.55f, 0.60f);
+        private static readonly Color SnareColor = new Color(0.45f, 0.28f, 0.12f);
+        private static readonly Color MonsterColor = new Color(0.60f, 0.30f, 0.80f);
         private static readonly Color DiceColor = new Color(0.97f, 0.97f, 0.95f);
         private static readonly Color PipColor = new Color(0.10f, 0.10f, 0.12f);
         private static readonly Color GroundColor = new Color(0.25f, 0.42f, 0.25f);
@@ -55,16 +68,24 @@ namespace RollOfLegends.EditorTools
         public static void Build()
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            if (!AssetDatabase.IsValidFolder(PrefabsFolder))
+            {
+                AssetDatabase.CreateFolder("Assets/_Project/Prefabs", "Effects");
+            }
 
             CreateLight();
             CreateGround();
             Board board = CreateBoard();
             DiceView dice = CreateDice();
-            Transform hero = CreateHero(board);
+            CreateCastle("PlayerBase", BaseCellPlayer, "PlayerBase", PlayerColor);
+            CreateCastle("RivalBase", BaseCellRival, "RivalBase", RivalColor);
+            Transform hero = CreateFighterView("Hero", "Hero", PlayerColor);
+            Transform rival = CreateFighterView("Rival", "Rival", RivalColor);
+            BoardEffects effects = CreateBoardEffects(board);
             CreateCamera(board);
 
             Canvas canvas = CreateCanvas();
-            Text infoText = CreateInfoPanel(canvas.transform);
+            CreateHud(canvas.transform, out Text statusText, out Text messageText);
             Button playButton = CreateButton(canvas.transform, "PlayButton", "PLAY",
                 new Vector2(0.5f, 0.5f), Vector2.zero, new Color(0.20f, 0.65f, 0.30f));
             CardView[] cardSlots = CreateHand(canvas.transform, HandSize);
@@ -73,7 +94,9 @@ namespace RollOfLegends.EditorTools
             var controller = new GameObject("GameController").AddComponent<GameController>();
             var serialized = new SerializedObject(controller);
             serialized.FindProperty("_board").objectReferenceValue = board;
-            serialized.FindProperty("_hero").objectReferenceValue = hero;
+            serialized.FindProperty("_effects").objectReferenceValue = effects;
+            serialized.FindProperty("_heroView").objectReferenceValue = hero;
+            serialized.FindProperty("_rivalView").objectReferenceValue = rival;
             serialized.FindProperty("_dice").objectReferenceValue = dice;
             serialized.FindProperty("_playButton").objectReferenceValue = playButton;
             SerializedProperty slots = serialized.FindProperty("_cardSlots");
@@ -82,7 +105,8 @@ namespace RollOfLegends.EditorTools
             {
                 slots.GetArrayElementAtIndex(i).objectReferenceValue = cardSlots[i];
             }
-            serialized.FindProperty("_infoText").objectReferenceValue = infoText;
+            serialized.FindProperty("_statusText").objectReferenceValue = statusText;
+            serialized.FindProperty("_messageText").objectReferenceValue = messageText;
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -127,9 +151,12 @@ namespace RollOfLegends.EditorTools
                 block.transform.localPosition = new Vector3(0f, -TileThickness / 2f, 0f);
                 block.transform.localScale = new Vector3(TileSize, TileThickness, TileSize);
                 bool isStart = i == 0;
-                SetMaterial(block, isStart ? "StartTile" : "Tile", isStart ? StartTileColor : TileColor);
+                bool isRivalHome = i == cells.Length / 2; // diagonally opposite START
+                if (isStart) SetMaterial(block, "StartTile", StartTileColor);
+                else if (isRivalHome) SetMaterial(block, "RivalTile", RivalTileColor);
+                else SetMaterial(block, "Tile", TileColor);
 
-                CreateTileLabel(tile.transform, isStart ? "START" : i.ToString());
+                CreateTileLabel(tile.transform, isStart ? "START" : isRivalHome ? "RIVAL" : i.ToString());
             }
 
             return board;
@@ -159,20 +186,20 @@ namespace RollOfLegends.EditorTools
 
         private static void CreateTileLabel(Transform tile, string text)
         {
-            // A small world-space UI canvas lying flat on the tile. Unlike 3D Text (TextMesh),
-            // world-space UI is correctly hidden behind the hero and the base.
+            // A small world-space UI canvas lying flat along the tile's front edge, leaving the middle
+            // free for effect markers. Unlike 3D Text (TextMesh), world-space UI is correctly hidden behind objects.
             var label = new GameObject("Label", typeof(RectTransform), typeof(Canvas));
             label.transform.SetParent(tile, false);
             label.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
 
             const float unitsPerWorldUnit = 200f;
             var rect = label.GetComponent<RectTransform>();
-            rect.localPosition = new Vector3(0f, 0.01f, 0f);
+            rect.localPosition = new Vector3(0f, 0.01f, -TileSize * 0.33f);
             rect.localRotation = Quaternion.Euler(90f, 0f, 0f); // lie flat, readable from the camera
             rect.localScale = Vector3.one / unitsPerWorldUnit;
-            rect.sizeDelta = Vector2.one * TileSize * unitsPerWorldUnit;
+            rect.sizeDelta = new Vector2(TileSize, TileSize * 0.34f) * unitsPerWorldUnit;
 
-            Text labelText = CreateText(label.transform, "Text", text, text.Length > 2 ? 56 : 100, TextAnchor.MiddleCenter);
+            Text labelText = CreateText(label.transform, "Text", text, text.Length > 2 ? 44 : 64, TextAnchor.MiddleCenter);
             labelText.color = new Color(0.25f, 0.25f, 0.25f);
         }
 
@@ -232,15 +259,118 @@ namespace RollOfLegends.EditorTools
             }
         }
 
-        private static Transform CreateHero(Board board)
+        private static Transform CreateFighterView(string name, string materialName, Color color)
         {
             // Capsule is 2 units tall at scale 1, so scale 0.5 makes a 1 unit tall hero.
-            GameObject hero = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            hero.name = "Hero";
-            hero.transform.localScale = Vector3.one * 0.5f;
-            hero.transform.position = board.GetTilePosition(0) + Vector3.up * 0.5f;
-            SetMaterial(hero, "Hero", HeroColor);
-            return hero.transform;
+            // The GameController places it on its home tile when the game starts.
+            GameObject fighter = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            fighter.name = name;
+            fighter.transform.localScale = Vector3.one * 0.5f;
+            SetMaterial(fighter, materialName, color);
+            return fighter.transform;
+        }
+
+        private static void CreateCastle(string name, Vector2Int cell, string materialName, Color color)
+        {
+            // A small castle: a block with a tower on top.
+            var castle = new GameObject(name);
+            castle.transform.position = CellToWorld(cell);
+
+            GameObject body = Part(castle, PrimitiveType.Cube, "Body", new Vector3(0f, 0.1f, 0f), new Vector3(1.1f, 0.6f, 1.1f));
+            SetMaterial(body, materialName, color);
+            GameObject tower = Part(castle, PrimitiveType.Cylinder, "Tower", new Vector3(0f, 0.65f, 0f), new Vector3(0.5f, 0.25f, 0.5f));
+            SetMaterial(tower, materialName, color);
+        }
+
+        private static BoardEffects CreateBoardEffects(Board board)
+        {
+            var effects = board.gameObject.AddComponent<BoardEffects>();
+            var serialized = new SerializedObject(effects);
+            serialized.FindProperty("_board").objectReferenceValue = board;
+            serialized.FindProperty("_swordPrefab").objectReferenceValue = SavePrefab(BuildSword());
+            serialized.FindProperty("_potionPrefab").objectReferenceValue = SavePrefab(BuildPotion());
+            serialized.FindProperty("_spikesPrefab").objectReferenceValue = SavePrefab(BuildSpikes());
+            serialized.FindProperty("_snarePrefab").objectReferenceValue = SavePrefab(BuildSnare());
+            serialized.FindProperty("_monsterPrefab").objectReferenceValue = SavePrefab(BuildMonster());
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            return effects;
+        }
+
+        // ---------- Effect marker prefabs (placeholder art made of primitives) ----------
+
+        private static GameObject BuildSword()
+        {
+            var root = new GameObject("Sword");
+            SetMaterial(Part(root, PrimitiveType.Cube, "Blade", new Vector3(0f, 0.45f, 0f), new Vector3(0.1f, 0.5f, 0.03f)), "Sword", SwordColor);
+            SetMaterial(Part(root, PrimitiveType.Cube, "Guard", new Vector3(0f, 0.2f, 0f), new Vector3(0.32f, 0.06f, 0.06f)), "Sword", SwordColor);
+            SetMaterial(Part(root, PrimitiveType.Cube, "Grip", new Vector3(0f, 0.1f, 0f), new Vector3(0.06f, 0.16f, 0.06f)), "Snare", SnareColor);
+            root.AddComponent<Spinner>();
+            return root;
+        }
+
+        private static GameObject BuildPotion()
+        {
+            var root = new GameObject("Potion");
+            SetMaterial(Part(root, PrimitiveType.Sphere, "Bottle", new Vector3(0f, 0.2f, 0f), Vector3.one * 0.36f), "Potion", PotionColor);
+            SetMaterial(Part(root, PrimitiveType.Cylinder, "Neck", new Vector3(0f, 0.43f, 0f), new Vector3(0.12f, 0.08f, 0.12f)), "Potion", PotionColor);
+            SetMaterial(Part(root, PrimitiveType.Cylinder, "Cork", new Vector3(0f, 0.53f, 0f), new Vector3(0.1f, 0.03f, 0.1f)), "Snare", SnareColor);
+            root.AddComponent<Spinner>();
+            return root;
+        }
+
+        private static GameObject BuildSpikes()
+        {
+            var root = new GameObject("Spikes");
+            for (int i = 0; i < 5; i++)
+            {
+                Vector3 position = i == 0 ? Vector3.zero : Quaternion.Euler(0f, 45f + i * 90f, 0f) * new Vector3(0f, 0f, 0.2f);
+                GameObject spike = Part(root, PrimitiveType.Cube, "Spike", position + new Vector3(0f, 0.15f, 0f), new Vector3(0.07f, 0.3f, 0.07f));
+                spike.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
+                SetMaterial(spike, "Spikes", SpikesColor);
+            }
+            return root;
+        }
+
+        private static GameObject BuildSnare()
+        {
+            var root = new GameObject("Snare");
+            SetMaterial(Part(root, PrimitiveType.Cylinder, "Ring", new Vector3(0f, 0.02f, 0f), new Vector3(0.65f, 0.02f, 0.65f)), "Snare", SnareColor);
+            SetMaterial(Part(root, PrimitiveType.Cylinder, "Hole", new Vector3(0f, 0.03f, 0f), new Vector3(0.45f, 0.02f, 0.45f)), "Pip", PipColor);
+            return root;
+        }
+
+        private static GameObject BuildMonster()
+        {
+            var root = new GameObject("Monster");
+            SetMaterial(Part(root, PrimitiveType.Capsule, "Body", new Vector3(0f, 0.35f, 0f), new Vector3(0.45f, 0.35f, 0.45f)), "Monster", MonsterColor);
+            foreach (float x in new[] { -0.09f, 0.09f })
+            {
+                // Eyes look toward the camera (-z).
+                SetMaterial(Part(root, PrimitiveType.Sphere, "Eye", new Vector3(x, 0.5f, -0.18f), Vector3.one * 0.12f), "Dice", DiceColor);
+                SetMaterial(Part(root, PrimitiveType.Sphere, "Pupil", new Vector3(x, 0.5f, -0.235f), Vector3.one * 0.06f), "Pip", PipColor);
+            }
+            return root;
+        }
+
+        /// <summary>Creates a primitive as a child part, without a collider (markers don't need physics).</summary>
+        private static GameObject Part(GameObject parent, PrimitiveType type, string name, Vector3 localPosition, Vector3 localScale)
+        {
+            GameObject part = GameObject.CreatePrimitive(type);
+            part.name = name;
+            Object.DestroyImmediate(part.GetComponent<Collider>());
+            part.transform.SetParent(parent.transform, false);
+            part.transform.localPosition = localPosition;
+            part.transform.localScale = localScale;
+            return part;
+        }
+
+        /// <summary>Saves a built object as a prefab asset (overwriting the old one) and removes it from the scene.</summary>
+        private static GameObject SavePrefab(GameObject root)
+        {
+            string path = $"{PrefabsFolder}/{root.name}.prefab";
+            GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
+            Object.DestroyImmediate(root);
+            return prefab;
         }
 
         private static void CreateCamera(Board board)
@@ -299,21 +429,43 @@ namespace RollOfLegends.EditorTools
             return canvasObject.GetComponent<Canvas>();
         }
 
-        private static Text CreateInfoPanel(Transform canvas)
+        /// <summary>Top-left panel: both sides' stats, the latest event message and a color legend.</summary>
+        private static void CreateHud(Transform canvas, out Text statusText, out Text messageText)
         {
-            var panel = new GameObject("InfoPanel", typeof(RectTransform), typeof(Image));
+            var panel = new GameObject("HudPanel", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup));
             panel.transform.SetParent(canvas, false);
             var rect = panel.GetComponent<RectTransform>();
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f); // top-left corner
             rect.anchoredPosition = new Vector2(30f, -30f);
-            rect.sizeDelta = new Vector2(640f, 220f);
+            rect.sizeDelta = new Vector2(660f, 300f);
             panel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
 
-            Text text = CreateText(panel.transform, "InfoText", "", 44, TextAnchor.UpperLeft);
-            var textRect = text.rectTransform;
-            textRect.offsetMin = new Vector2(24f, 16f);
-            textRect.offsetMax = new Vector2(-24f, -16f);
-            return text;
+            var layout = panel.GetComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(22, 22, 14, 14);
+            layout.spacing = 6f;
+            layout.childControlWidth = layout.childControlHeight = true;
+            layout.childForceExpandHeight = false;
+
+            statusText = CreateText(panel.transform, "StatusText", "", 34, TextAnchor.UpperLeft);
+            statusText.gameObject.AddComponent<LayoutElement>().preferredHeight = 90f;
+
+            messageText = CreateText(panel.transform, "MessageText", "", 30, TextAnchor.UpperLeft);
+            messageText.color = new Color(1f, 0.92f, 0.6f);
+            messageText.gameObject.AddComponent<LayoutElement>().preferredHeight = 80f;
+
+            Text legend = CreateText(panel.transform, "Legend",
+                $"<color=#{Hex(SwordColor)}>SWORD</color> +{TileRules.SwordBonus} ATK   " +
+                $"<color=#{Hex(PotionColor)}>POTION</color> +{TileRules.PotionHeal} HP   " +
+                $"<color=#{Hex(SpikesColor)}>SPIKES</color> -{TileRules.SpikeDamage} HP\n" +
+                $"<color=#{Hex(SnareColor)}>SNARE</color> skip a turn   " +
+                $"<color=#{Hex(MonsterColor)}>MONSTER</color> power {TileRules.MonsterPower}",
+                24, TextAnchor.UpperLeft);
+            legend.gameObject.AddComponent<LayoutElement>().preferredHeight = 64f;
+        }
+
+        private static string Hex(Color color)
+        {
+            return ColorUtility.ToHtmlStringRGB(Color.Lerp(color, Color.white, 0.5f));
         }
 
         private static Button CreateButton(Transform canvas, string name, string label, Vector2 anchor, Vector2 position, Color color)
