@@ -17,17 +17,19 @@ namespace RollOfLegends.EditorTools
         private const string ScenePath = "Assets/_Project/Scenes/Main.unity";
         private const string MaterialsFolder = "Assets/_Project/Art/Materials";
 
-        // A 5 x 4 rectangle has 2 * (5 + 4) - 4 = 14 tiles around its edge.
-        private const int Columns = 5;
-        private const int Rows = 4;
+        // A square with 8 tiles on each side. Corner tiles are shared, so there are 4 * 8 - 4 = 28 tiles.
+        private const int TilesPerSide = 8;
         private const float TileSpacing = 1.3f;
         private const float TileSize = 1.1f;
         private const float TileThickness = 0.2f;
 
+        private const float DiceSize = 1.2f;
+
         private static readonly Color TileColor = new Color(0.93f, 0.89f, 0.80f);
         private static readonly Color StartTileColor = new Color(0.45f, 0.80f, 0.45f);
         private static readonly Color HeroColor = new Color(0.20f, 0.45f, 0.95f);
-        private static readonly Color BaseColor = new Color(0.75f, 0.25f, 0.20f);
+        private static readonly Color DiceColor = new Color(0.97f, 0.97f, 0.95f);
+        private static readonly Color PipColor = new Color(0.10f, 0.10f, 0.12f);
         private static readonly Color GroundColor = new Color(0.25f, 0.42f, 0.25f);
         private static readonly Color SkyColor = new Color(0.55f, 0.75f, 0.90f);
 
@@ -53,7 +55,7 @@ namespace RollOfLegends.EditorTools
             CreateLight();
             CreateGround();
             Board board = CreateBoard();
-            CreateBase();
+            DiceView dice = CreateDice();
             Transform hero = CreateHero(board);
             CreateCamera(board);
 
@@ -70,6 +72,7 @@ namespace RollOfLegends.EditorTools
             var serialized = new SerializedObject(controller);
             serialized.FindProperty("_board").objectReferenceValue = board;
             serialized.FindProperty("_hero").objectReferenceValue = hero;
+            serialized.FindProperty("_dice").objectReferenceValue = dice;
             serialized.FindProperty("_playButton").objectReferenceValue = playButton;
             serialized.FindProperty("_rollButton").objectReferenceValue = rollButton;
             serialized.FindProperty("_infoText").objectReferenceValue = infoText;
@@ -95,7 +98,7 @@ namespace RollOfLegends.EditorTools
             GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
             ground.transform.position = new Vector3(0f, -TileThickness, 0f);
-            ground.transform.localScale = new Vector3(1.2f, 1f, 1f);
+            ground.transform.localScale = new Vector3(1.4f, 1f, 1.4f);
             SetMaterial(ground, "Ground", GroundColor);
         }
 
@@ -125,23 +128,26 @@ namespace RollOfLegends.EditorTools
             return board;
         }
 
-        /// <summary>Grid cells around the edge of the rectangle, in walking order, starting bottom-left.</summary>
+        /// <summary>
+        /// Grid cells around the edge of the square, in walking order: clockwise as seen from the camera,
+        /// starting at the bottom-left corner (START).
+        /// </summary>
         private static Vector2Int[] GetLoopCells()
         {
+            const int last = TilesPerSide - 1;
             var cells = new System.Collections.Generic.List<Vector2Int>();
-            for (int x = 0; x < Columns; x++) cells.Add(new Vector2Int(x, 0));                // bottom row, left to right
-            for (int y = 1; y < Rows; y++) cells.Add(new Vector2Int(Columns - 1, y));         // right column, going up
-            for (int x = Columns - 2; x >= 0; x--) cells.Add(new Vector2Int(x, Rows - 1));    // top row, right to left
-            for (int y = Rows - 2; y >= 1; y--) cells.Add(new Vector2Int(0, y));              // left column, going down
+            for (int y = 0; y <= last; y++) cells.Add(new Vector2Int(0, y));        // left side, going up (from START)
+            for (int x = 1; x <= last; x++) cells.Add(new Vector2Int(x, last));     // top side, going right
+            for (int y = last - 1; y >= 0; y--) cells.Add(new Vector2Int(last, y)); // right side, going down
+            for (int x = last - 1; x >= 1; x--) cells.Add(new Vector2Int(x, 0));    // bottom side, going left
             return cells.ToArray();
         }
 
         private static Vector3 CellToWorld(Vector2Int cell)
         {
             // Centre the board on the world origin.
-            float x = (cell.x - (Columns - 1) / 2f) * TileSpacing;
-            float z = (cell.y - (Rows - 1) / 2f) * TileSpacing;
-            return new Vector3(x, 0f, z);
+            float offset = (TilesPerSide - 1) / 2f;
+            return new Vector3((cell.x - offset) * TileSpacing, 0f, (cell.y - offset) * TileSpacing);
         }
 
         private static void CreateTileLabel(Transform tile, string text)
@@ -163,25 +169,60 @@ namespace RollOfLegends.EditorTools
             labelText.color = new Color(0.25f, 0.25f, 0.25f);
         }
 
-        private static void CreateBase()
+        // Dot positions on a 3 x 3 grid (-1, 0, 1) for each number, like a real die. Index = number.
+        private static readonly Vector2[][] PipLayouts =
         {
-            // A simple "castle" in the middle of the board: a block with a tower on top.
-            var baseRoot = new GameObject("Base");
+            null,
+            new[] { new Vector2(0, 0) },
+            new[] { new Vector2(-1, -1), new Vector2(1, 1) },
+            new[] { new Vector2(-1, -1), new Vector2(0, 0), new Vector2(1, 1) },
+            new[] { new Vector2(-1, -1), new Vector2(-1, 1), new Vector2(1, -1), new Vector2(1, 1) },
+            new[] { new Vector2(-1, -1), new Vector2(-1, 1), new Vector2(0, 0), new Vector2(1, -1), new Vector2(1, 1) },
+            new[] { new Vector2(-1, -1), new Vector2(-1, 0), new Vector2(-1, 1), new Vector2(1, -1), new Vector2(1, 0), new Vector2(1, 1) },
+        };
+
+        private static DiceView CreateDice()
+        {
+            // A white die resting in the middle of the board. The GameController hides it until the first roll.
+            var dice = new GameObject("Dice");
+            dice.transform.position = new Vector3(0f, -TileThickness + DiceSize / 2f, 0f);
 
             GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cube);
             body.name = "Body";
-            body.transform.SetParent(baseRoot.transform);
-            // Kept low so it doesn't hide the tiles behind it.
-            body.transform.localPosition = new Vector3(0f, 0.15f, 0f);
-            body.transform.localScale = new Vector3(1.8f, 0.7f, 1.0f);
-            SetMaterial(body, "Base", BaseColor);
+            body.transform.SetParent(dice.transform, false);
+            body.transform.localScale = Vector3.one * DiceSize;
+            SetMaterial(body, "Dice", DiceColor);
 
-            GameObject tower = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            tower.name = "Tower";
-            tower.transform.SetParent(baseRoot.transform);
-            tower.transform.localPosition = new Vector3(0f, 0.8f, 0f);
-            tower.transform.localScale = new Vector3(0.6f, 0.3f, 0.6f);
-            SetMaterial(tower, "Base", BaseColor);
+            for (int value = 1; value <= 6; value++)
+            {
+                CreatePips(dice.transform, value);
+            }
+
+            return dice.AddComponent<DiceView>();
+        }
+
+        /// <summary>Adds the black dots for one number. DiceView.FaceNormal decides which side shows which number.</summary>
+        private static void CreatePips(Transform dice, int value)
+        {
+            Vector3 normal = DiceView.FaceNormal(value);
+
+            // Two directions lying flat on this face, used as the face's own "right" and "up".
+            Vector3 helper = Mathf.Abs(normal.y) > 0.5f ? Vector3.forward : Vector3.up;
+            Vector3 right = Vector3.Cross(helper, normal);
+            Vector3 up = Vector3.Cross(normal, right);
+
+            const float spacing = 0.28f;
+            foreach (Vector2 spot in PipLayouts[value])
+            {
+                GameObject pip = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                pip.name = $"Pip_{value}";
+                Object.DestroyImmediate(pip.GetComponent<Collider>()); // dots don't need physics
+                pip.transform.SetParent(dice, false);
+                pip.transform.localScale = Vector3.one * 0.22f;
+                // Sink each dot slightly into the face so only a small bump sticks out.
+                pip.transform.localPosition = normal * (DiceSize / 2f - 0.06f) + (right * spot.x + up * spot.y) * spacing;
+                SetMaterial(pip, "Pip", PipColor);
+            }
         }
 
         private static Transform CreateHero(Board board)
@@ -206,7 +247,7 @@ namespace RollOfLegends.EditorTools
 
             // Fixed viewing angle; CameraFit only moves the camera along this direction.
             cameraObject.transform.rotation = Quaternion.Euler(55f, 0f, 0f);
-            cameraObject.transform.position = -cameraObject.transform.forward * 11f;
+            cameraObject.transform.position = -cameraObject.transform.forward * 20f;
 
             var fit = cameraObject.AddComponent<CameraFit>();
             var serialized = new SerializedObject(fit);

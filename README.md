@@ -2,7 +2,7 @@
 
 Unity ile geliştirilen 3D bir mobil zar/board oyunu.
 
-> Şu an: oynanabilir ilk prototip — döngü şeklinde board, zarla ilerleyen kahraman. Güncel durum için [docs/DEV_LOG.md](docs/DEV_LOG.md).
+> Şu an: oynanabilir ilk prototip — 28 tile'lık kare board, dönen 3D zar, zıplayarak ilerleyen kahraman. Güncel durum için [docs/DEV_LOG.md](docs/DEV_LOG.md).
 
 ## Gereksinimler
 
