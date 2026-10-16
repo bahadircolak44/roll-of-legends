@@ -9,13 +9,14 @@ _Last updated: 2026-10-16_
 
 **Working** — a playable match against an AI rival in `Assets/_Project/Scenes/Main.unity`:
 - **Look:** diamond board view (camera turned 45°, pitch 40°): START bottom-middle, RIVAL corner at the top. Free CC0 3D models: KayKit Knight (you) vs Barbarian (rival) with looping idle animations, KayKit blue/red castles, KayKit sword/potion/shield/chest/spike floor, 8 random Quaternius monsters (animated). Spell book and forest trees are primitives.
-- **Stats:** hero HP starts at 20 with **no upper limit**; ATK 2; DEF 0 (each DEF point lowers damage taken, min 1). Base HP starts at 10 (also no upper limit), shown separately in the badge. Knocked out → home with 20 HP.
+- **Stats:** hero HP starts at 20 with **no upper limit**; ATK 2; DEF 0 (each DEF point lowers damage taken, min 1). Base HP starts at 10 (also no upper limit), shown separately in the badge. Knocked out → home with 20 HP and **all buffs lost** (ATK back to 2, DEF 0, roll bonus and rare card cleared); the base keeps its health.
 - **Cards:** hand of 3, select (landing preview with step count + what's on the tile, e.g. "3 · Forest") then tap again to roll. ODD, EVEN, FIXED n, RANDOM, and rare **DOUBLE** (two dice, 2–12, ~12% of draws; Twin Moons art).
-- **Tile effects** (`TileRules`, counts in `BoardEffects._setups`): Sword +1 ATK, Health Potion +5 HP, Repair Elixir (blue) +3 BASE, Shield +1 DEF, Spell Book (random: Fireball -4 HP to rival ignoring DEF / Earthquake -2 rival BASE / Haste next roll +2), Chest (next card is DOUBLE) — all used up and respawn elsewhere; Spikes -3 HP, Snare skip a turn, Forest next roll -3 (min 1 step), Monster power 3 — these stay.
+- **Tile effects** (`TileRules`, counts in `BoardEffects._setups`): Sword +1 ATK, Health Potion +5 HP, Repair Elixir (blue) +3 BASE, Shield +1 DEF, Spell Book (random: Fireball -4 HP to rival ignoring DEF / Earthquake -2 rival BASE / Haste next roll +2), Chest (next card is DOUBLE) — all used up and respawn elsewhere; Spikes -3 HP, Snare skip a turn, Forest next roll -3 (min 1 step) — these stay.
+- **Monster fights** (`Monster`, `TileRules.FightMonster`): landing on a monster draws a random common fight card and rolls it. Each monster has random winning numbers shown above it — Small 5 numbers (win +3 HP / lose -2 HP), Medium 3–4 (+1 ATK / -3 HP), Big 1–2 (+2 ATK +3 HP / -5 HP). Win → monster respawns elsewhere; lose → it stays. Tier comes from the model (blob/mushroom/bee small, ghost/golem medium, dragon/demon/yeti big).
 - Passing the enemy home damages its base by ATK; passing your own heals 2 HP. Landing on the other hero hits it. Base 0 (also via Earthquake) → YOU WIN / YOU LOSE + PLAY AGAIN.
 - HUD: badges (name, BASE, HP/ATK/DEF, status like "Next roll -3"), HISTORY log with named colored events, prompt line, floating texts, particles, bloom/vignette.
 - Rival AI (standard): picks the card with the best average outcome, aware of all effects and its own roll bonus.
-- **58 PlayMode tests pass** (rules, spells, AI, every effect in the scene, DOUBLE, forest preview, winning, camera framing).
+- **64 PlayMode tests pass** (rules, spells, AI, every effect in the scene, DOUBLE, forest preview, winning, camera framing).
 
 **Not done yet**
 - Difficulty levels, sound, saving, Android device build, orientation lock, hop/attack animations (models only play Idle).
@@ -47,6 +48,9 @@ _Last updated: 2026-10-16_
 - Walking order = child order of `Board`; rival home = `TileCount / 2`. UI uses legacy `UnityEngine.UI.Text`. If you add a UI panel the board must avoid, add it to `ScreenLayout.Obstacles`.
 
 ## History
+
+### 2026-10-16 — Monster fights, harsher knock-outs
+- Monsters are fought with a random fight card against their winning numbers (3 tiers); knock-outs reset all buffs.
 
 ### 2026-10-16 — CC0 models, diamond camera, gameplay v2
 - User rejected their own AI-generated GLB pack; replaced with CC0 KayKit (heroes, castles, props) + Quaternius (8 monsters) after user approval (~19 MB, Git LFS). Idle animations on heroes and monsters.

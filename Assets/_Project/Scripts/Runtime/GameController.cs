@@ -208,7 +208,10 @@ namespace RollOfLegends
             for (int i = 0; i < stepList.Count; i++)
             {
                 int tile = Board.Advance(Player.Tile, stepList[i], _board.TileCount);
-                notes[i] = tile == Rival.Tile ? "Attack!" : TileRules.ShortName(_effects.GetEffect(tile));
+                Monster monster = _effects.GetMonster(tile);
+                notes[i] = tile == Rival.Tile ? "Attack!"
+                    : monster != null ? $"{monster.TierName} {monster.NumbersText}"
+                    : TileRules.ShortName(_effects.GetEffect(tile));
             }
             _highlighter.Show(Player.Tile, stepList.ToArray(), CardArt.AccentColor(card.Type), notes);
         }
@@ -278,7 +281,7 @@ namespace RollOfLegends
                 }
                 else
                 {
-                    int slot = RivalAI.ChooseCard(_rivalHand, Rival, Player, _effects.GetEffect, _board.TileCount);
+                    int slot = RivalAI.ChooseCard(_rivalHand, Rival, Player, _effects.GetEffect, _board.TileCount, _effects.GetMonster);
                     DiceCard card = _rivalHand[slot];
                     yield return TakeTurn(Rival, Player, card);
                     if (IsGameOver) yield break;
@@ -350,7 +353,14 @@ namespace RollOfLegends
                 }
             }
 
-            ResolveLanding(mover, other);
+            if (mover.Tile != other.Tile && _effects.GetEffect(mover.Tile) == TileEffect.Monster)
+            {
+                yield return FightMonster(mover);
+            }
+            else
+            {
+                ResolveLanding(mover, other);
+            }
             UpdateBadges();
             if (other.BaseHp == 0) // e.g. an earthquake spell
             {
@@ -358,6 +368,46 @@ namespace RollOfLegends
                 yield break;
             }
             yield return new WaitForSeconds(_messagePause);
+        }
+
+        /// <summary>
+        /// A monster fight: the fighter gets a fresh random fight card and rolls it. One of the monster's
+        /// winning numbers defeats it (reward); anything else and the monster strikes back.
+        /// </summary>
+        private IEnumerator FightMonster(Fighter fighter)
+        {
+            Monster monster = _effects.GetMonster(fighter.Tile);
+            Transform view = ViewOf(fighter);
+            Color tierColor = BoardEffects.TierColor(monster.Tier);
+
+            DiceCard fightCard = DrawFightCard();
+            Say($"{fighter.Name} fights a {monster.TierName.ToLower()} monster! Needs {monster.NumbersText}");
+            Log($"{NameOf(fighter)} fights a <color=#{Hex(tierColor)}>{monster.TierName.ToLower()} monster</color> " +
+                $"(wins on {monster.NumbersText}) with fight card {CardTag(fightCard)}");
+            _fx.Popup(view.position + AboveHead, $"FIGHT! {CardArt.Title(fightCard.Type)}", tierColor);
+            yield return new WaitForSeconds(_messagePause);
+
+            int roll = fightCard.Roll();
+            yield return _dice.Roll(roll);
+
+            EffectResult result = TileRules.FightMonster(fighter, monster, roll);
+            Color color = result.Good ? AttackColor : LossColor;
+            _fx.Popup(view.position + AboveHead, result.Good ? $"WIN! {result.Change}" : result.Change, color);
+            _fx.Burst(_board.GetTilePosition(fighter.Tile) + Vector3.up * 0.6f, color);
+            Log($"{NameOf(fighter)} {result.Description}: <color=#{Hex(color)}>{result.Change}</color>");
+
+            if (result.RemoveEffect)
+            {
+                _effects.MoveElsewhere(fighter.Tile, Player.Tile, Rival.Tile);
+            }
+            if (fighter.IsKnockedOut) KnockOut(fighter);
+        }
+
+        /// <summary>A random common card (no DOUBLE): fights are about rolling a single die.</summary>
+        private static DiceCard DrawFightCard()
+        {
+            DiceType type = Dice.RandomType();
+            return new DiceCard(type, type == DiceType.Fixed ? Random.Range(1, 7) : 0);
         }
 
         private void ResolveLanding(Fighter mover, Fighter other)
@@ -405,7 +455,7 @@ namespace RollOfLegends
             fighter.Respawn();
             PlaceView(fighter);
             _fx.Popup(ViewOf(fighter).position + AboveHead, "KNOCKED OUT", LossColor);
-            Log($"{NameOf(fighter)} was <color=#{Hex(LossColor)}>knocked out</color> and returns home with {fighter.StartHp} HP");
+            Log($"{NameOf(fighter)} was <color=#{Hex(LossColor)}>knocked out</color>: back home with {fighter.StartHp} HP, all buffs lost");
         }
 
         private void EndGame(bool playerWon)

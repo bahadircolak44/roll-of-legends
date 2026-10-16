@@ -14,7 +14,7 @@ namespace RollOfLegends
         Spikes,       // damage (stays)
         Snare,        // skip the next turn (stays)
         Forest,       // your next roll is lower (stays)
-        Monster,      // fight: win if your attack is high enough
+        Monster,      // fight: roll one of the monster's winning numbers to beat it (see Monster)
     }
 
     public enum Spell
@@ -32,8 +32,6 @@ namespace RollOfLegends
         public const int BaseRepair = 3;
         public const int ShieldBonus = 1;
         public const int SpikeDamage = 3;
-        public const int MonsterPower = 3;
-        public const int MonsterReward = 1;   // attack bonus for beating a monster
         public const int ForestPenalty = 3;   // next roll minus this
         public const int FireballDamage = 4;
         public const int QuakeDamage = 2;
@@ -82,18 +80,28 @@ namespace RollOfLegends
                     mover.NextRollBonus -= ForestPenalty;
                     return new EffectResult("got lost in the forest", $"NEXT ROLL -{ForestPenalty}", good: false, removeEffect: false);
 
-                case TileEffect.Monster:
-                    if (mover.Attack >= MonsterPower)
-                    {
-                        mover.Attack += MonsterReward;
-                        return new EffectResult("defeated a monster", $"+{MonsterReward} ATK", good: true, removeEffect: true);
-                    }
-                    int hurt = mover.TakeDamage(MonsterPower);
-                    return new EffectResult("was beaten by a monster", $"-{hurt} HP", good: false, removeEffect: false);
-
-                default:
+                default: // monsters are fought with FightMonster
                     return default;
             }
+        }
+
+        /// <summary>Settles a monster fight: <paramref name="roll"/> is the fight card's result.</summary>
+        public static EffectResult FightMonster(Fighter fighter, Monster monster, int roll)
+        {
+            if (monster.IsBeatenBy(roll))
+            {
+                fighter.Attack += monster.AttackReward;
+                fighter.Heal(monster.HpReward);
+                var rewards = new System.Collections.Generic.List<string>();
+                if (monster.AttackReward > 0) rewards.Add($"+{monster.AttackReward} ATK");
+                if (monster.HpReward > 0) rewards.Add($"+{monster.HpReward} HP");
+                return new EffectResult($"rolled {roll} and defeated the {monster.TierName.ToLower()} monster",
+                    string.Join(" ", rewards), good: true, removeEffect: true);
+            }
+
+            int taken = fighter.TakeDamage(monster.Damage);
+            return new EffectResult($"rolled {roll} (needed {monster.NumbersText}) and the {monster.TierName.ToLower()} monster struck back",
+                $"-{taken} HP", good: false, removeEffect: false);
         }
 
         public static EffectResult CastSpell(Fighter caster, Fighter other, Spell spell)

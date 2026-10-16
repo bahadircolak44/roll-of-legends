@@ -253,15 +253,47 @@ namespace RollOfLegends.Tests
         }
 
         [UnityTest]
-        public IEnumerator LandingOnMonster_TooWeak_TakesDamageAndMonsterStays()
+        public IEnumerator MonsterFight_Losing_MonsterStrikesBackAndStays()
         {
             StartWithEmptyBoard();
-            _effects.SetEffect(2, TileEffect.Monster);
+            _effects.SetMonster(2, new Monster(MonsterTier.Big, 7)); // 7 can never be rolled
 
             yield return PlayFixed(2);
 
-            Assert.AreEqual(17, _controller.Player.Hp);
+            Assert.AreEqual(20 - 5, _controller.Player.Hp);
             Assert.AreEqual(TileEffect.Monster, _effects.GetEffect(2));
+            StringAssert.Contains("big monster", string.Join("\n", _log.Entries));
+            StringAssert.Contains("struck back", string.Join("\n", _log.Entries));
+        }
+
+        [UnityTest]
+        public IEnumerator MonsterFight_Winning_GivesRewardAndMonsterMovesAway()
+        {
+            StartWithEmptyBoard();
+            _effects.SetMonster(2, new Monster(MonsterTier.Medium, 1, 2, 3, 4, 5, 6)); // any roll wins
+
+            yield return PlayFixed(2);
+
+            Assert.AreEqual(3, _controller.Player.Attack, "Medium monster: +1 ATK");
+            Assert.AreNotEqual(TileEffect.Monster, _effects.GetEffect(2));
+            Assert.AreEqual(1, _effects.Count(TileEffect.Monster), "It reappears elsewhere");
+        }
+
+        [UnityTest]
+        public IEnumerator KnockedOut_StartsOverWithoutBuffs()
+        {
+            StartWithEmptyBoard();
+            _controller.Player.Hp = 1;
+            _controller.Player.Attack = 7;
+            _controller.Player.Defense = 3;
+            _effects.SetEffect(3, TileEffect.Spikes);
+
+            yield return PlayFixed(3);
+
+            Assert.AreEqual(0, _controller.Player.Tile, "Back home");
+            Assert.AreEqual(20, _controller.Player.Hp);
+            Assert.AreEqual(2, _controller.Player.Attack, "Buffs are lost");
+            Assert.AreEqual(0, _controller.Player.Defense);
         }
 
         [UnityTest]

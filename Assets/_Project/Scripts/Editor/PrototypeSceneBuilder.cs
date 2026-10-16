@@ -43,9 +43,12 @@ namespace RollOfLegends.EditorTools
         private const float CameraYaw = 45f;
         private const float CameraPitch = 40f;
         private const float ModelYaw = 180f + CameraYaw; // models face the camera
-        private static readonly string[] MonsterModels =
+        // Monster models by size: small ones are easy fights, big ones hard (see Monster).
+        private static readonly (string model, MonsterTier tier)[] MonsterModels =
         {
-            "GreenBlob", "Mushnub", "Ghost", "Goleling", "Dragon", "Demon", "Yeti", "Armabee",
+            ("GreenBlob", MonsterTier.Small), ("Mushnub", MonsterTier.Small), ("Armabee", MonsterTier.Small),
+            ("Ghost", MonsterTier.Medium), ("Goleling", MonsterTier.Medium),
+            ("Dragon", MonsterTier.Big), ("Demon", MonsterTier.Big), ("Yeti", MonsterTier.Big),
         };
 
         // Animation clips to loop while standing still, in order of preference.
@@ -433,11 +436,6 @@ namespace RollOfLegends.EditorTools
         /// <summary>Every tile effect, how many of it a game starts with, and the prefab(s) that show it.</summary>
         private static BoardEffects CreateBoardEffects(Board board)
         {
-            var monsters = new GameObject[MonsterModels.Length];
-            for (int i = 0; i < MonsterModels.Length; i++)
-            {
-                monsters[i] = SavePrefab(BuildMonster(MonsterModels[i]), "Effects");
-            }
 
             var setups = new (TileEffect effect, int count, GameObject[] prefabs)[]
             {
@@ -450,7 +448,7 @@ namespace RollOfLegends.EditorTools
                 (TileEffect.Spikes, 2, new[] { SavePrefab(BuildSpikes(), "Effects") }),
                 (TileEffect.Snare, 1, new[] { SavePrefab(BuildSnare(), "Effects") }),
                 (TileEffect.Forest, 2, new[] { SavePrefab(BuildForest(), "Effects") }),
-                (TileEffect.Monster, 3, monsters),
+                (TileEffect.Monster, 3, new GameObject[0]), // prefabs come from the monster kinds below
             };
 
             var effects = board.gameObject.AddComponent<BoardEffects>();
@@ -469,6 +467,15 @@ namespace RollOfLegends.EditorTools
                 {
                     prefabs.GetArrayElementAtIndex(j).objectReferenceValue = setups[i].prefabs[j];
                 }
+            }
+            SerializedProperty kinds = serialized.FindProperty("_monsterKinds");
+            kinds.arraySize = MonsterModels.Length;
+            for (int i = 0; i < MonsterModels.Length; i++)
+            {
+                SerializedProperty kind = kinds.GetArrayElementAtIndex(i);
+                kind.FindPropertyRelative("Tier").intValue = (int)MonsterModels[i].tier;
+                kind.FindPropertyRelative("Prefab").objectReferenceValue =
+                    SavePrefab(BuildMonster(MonsterModels[i].model, MonsterModels[i].tier), "Effects");
             }
             serialized.ApplyModifiedPropertiesWithoutUndo();
             return effects;
@@ -599,11 +606,13 @@ namespace RollOfLegends.EditorTools
         }
 
         /// <summary>One prefab per monster model; BoardEffects picks one at random for each monster tile.</summary>
-        private static GameObject BuildMonster(string model)
+        private static GameObject BuildMonster(string model, MonsterTier tier)
         {
             var root = new GameObject($"Monster_{model}");
-            // Winged monsters are wide; letting them spread a bit past their tile keeps them from looking tiny.
-            PlaceModel(root, $"Quaternius/Monsters/{model}.fbx", height: 1.5f, width: 2.0f);
+            // Bigger tiers look bigger. Winged monsters are wide; letting them spread a bit past their tile
+            // keeps them from looking tiny.
+            float height = tier == MonsterTier.Small ? 1.15f : tier == MonsterTier.Medium ? 1.45f : 1.85f;
+            PlaceModel(root, $"Quaternius/Monsters/{model}.fbx", height: height, width: height * 1.35f);
             return root;
         }
 
