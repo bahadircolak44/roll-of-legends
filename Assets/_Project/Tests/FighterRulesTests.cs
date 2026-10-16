@@ -35,9 +35,11 @@ namespace RollOfLegends.Tests
         public void Sword_RaisesAttackAndIsUsedUp()
         {
             Fighter fighter = NewFighter();
-            TileRules.Apply(fighter, TileEffect.Sword, out bool removed);
+            EffectResult result = TileRules.Apply(fighter, TileEffect.Sword);
             Assert.AreEqual(3, fighter.Attack);
-            Assert.IsTrue(removed);
+            Assert.AreEqual("+1 ATK", result.Change);
+            Assert.IsTrue(result.Good);
+            Assert.IsTrue(result.RemoveEffect);
         }
 
         [Test]
@@ -45,37 +47,38 @@ namespace RollOfLegends.Tests
         {
             Fighter fighter = NewFighter();
             fighter.TakeDamage(10);
-            TileRules.Apply(fighter, TileEffect.Potion, out bool removed);
+            EffectResult result = TileRules.Apply(fighter, TileEffect.Potion);
             Assert.AreEqual(14, fighter.Hp);
-            Assert.IsTrue(removed);
+            Assert.IsTrue(result.RemoveEffect);
         }
 
         [Test]
         public void Spikes_HurtAndStay()
         {
             Fighter fighter = NewFighter();
-            TileRules.Apply(fighter, TileEffect.Spikes, out bool removed);
+            EffectResult result = TileRules.Apply(fighter, TileEffect.Spikes);
             Assert.AreEqual(17, fighter.Hp);
-            Assert.IsFalse(removed);
+            Assert.IsFalse(result.Good);
+            Assert.IsFalse(result.RemoveEffect);
         }
 
         [Test]
         public void Snare_SkipsNextTurnAndStays()
         {
             Fighter fighter = NewFighter();
-            TileRules.Apply(fighter, TileEffect.Snare, out bool removed);
+            EffectResult result = TileRules.Apply(fighter, TileEffect.Snare);
             Assert.AreEqual(1, fighter.SkipTurns);
-            Assert.IsFalse(removed);
+            Assert.IsFalse(result.RemoveEffect);
         }
 
         [Test]
         public void Monster_BeatsWeakFighter()
         {
             Fighter fighter = NewFighter(); // attack 2 < monster power 3
-            TileRules.Apply(fighter, TileEffect.Monster, out bool removed);
+            EffectResult result = TileRules.Apply(fighter, TileEffect.Monster);
             Assert.AreEqual(17, fighter.Hp);
             Assert.AreEqual(2, fighter.Attack);
-            Assert.IsFalse(removed);
+            Assert.IsFalse(result.RemoveEffect);
         }
 
         [Test]
@@ -83,10 +86,18 @@ namespace RollOfLegends.Tests
         {
             Fighter fighter = NewFighter();
             fighter.Attack = 3;
-            TileRules.Apply(fighter, TileEffect.Monster, out bool removed);
+            EffectResult result = TileRules.Apply(fighter, TileEffect.Monster);
             Assert.AreEqual(20, fighter.Hp);
             Assert.AreEqual(4, fighter.Attack);
-            Assert.IsTrue(removed);
+            Assert.IsTrue(result.RemoveEffect);
+        }
+
+        [Test]
+        public void EmptyTile_DoesNothing()
+        {
+            Fighter fighter = NewFighter();
+            Assert.IsFalse(TileRules.Apply(fighter, TileEffect.None).HasEffect);
+            Assert.AreEqual(20, fighter.Hp);
         }
 
         [Test]

@@ -7,42 +7,49 @@ _Last updated: 2026-10-16_
 
 ## Current state
 
-**Working** — a playable match against an AI rival in `Assets/_Project/Scenes/Main.unity`:
-- Square 8x8 board edge = 28 tiles, clockwise. Your home = tile 0 (START, bottom-left); rival home = tile 14 (RIVAL, diagonal corner). Castles (blue/red) sit inside the loop as visuals.
-- **PLAY** sets up both sides (HP 20, ATK 2, base HP 8), deals you 3 dice cards (ODD 1/3/5, EVEN 2/4/6, FIXED n, RANDOM 1-6) and scatters effects on random tiles (never on homes): 3 swords, 3 potions, 3 spikes, 2 snares, 3 monsters.
-- **Your turn:** tap a card → 3D die spins and lands → hero hops tile by tile → landing effect → new card in the empty slot. **Then the rival** (AI, "standard": picks the card with the best average outcome) does the same.
-- **Rules** (`TileRules`): Sword ATK+1 (moves to another tile), Potion HP+4 (moves), Spikes HP-3 (stays), Snare skip next turn (stays), Monster power 3 (ATK>=3 beats it for ATK+1 and it moves; else HP-3). Landing on the other fighter hits them for ATK. Passing/landing on the enemy home damages their base by ATK; passing your own home heals 2. HP 0 → back home with full HP. Base HP 0 → game over (YOU WIN / YOU LOSE) and PLAY AGAIN.
-- HUD (top-left): both sides' HP/ATK/BASE, latest event message, color legend.
-- 37 PlayMode tests pass: dice/card/fighter/tile rules, AI choices, board shape, game setup, turns, each effect in the scene, winning + replay, camera framing.
+**Working** — a playable, polished-looking match against an AI rival in `Assets/_Project/Scenes/Main.unity`:
+- Title screen (ROLL OF LEGENDS + PLAY) over a dimmed board.
+- Square 8x8 board edge = 28 tiles, clockwise, on a wooden plate with a grass courtyard. Your home = tile 0 (START, bottom-left); rival home = tile 14 (RIVAL). Castles with towers/flags; heroes are capsules with eyes (player: crown, rival: horns).
+- **Cards**: hand of 3 themed cards drawn in code — ODD = Sun of Ra (Egypt), EVEN = Zeus (Greece), FIXED n = Dragon, RANDOM = World Tree. **First tap selects** (card lifts + glows, possible landing tiles get a glowing frame with the step count), **second tap rolls**. Tapping another card switches the selection.
+- Turn flow: die spins and lands → hero hops tile by tile (squash on landing) → tile effect → new card. Then the AI rival plays.
+- Rules (`TileRules`): Sword ATK+1, Potion HP+4 (both move elsewhere after use), Spikes HP-3, Snare skip next turn (stay), Monster power 3 (ATK>=3 wins ATK+1, else HP-3). Landing on the other fighter hits for ATK. Passing the enemy home damages its base; passing your own heals 2. HP 0 → home with full HP. Base HP 0 → YOU WIN / YOU LOSE + PLAY AGAIN.
+- Feedback: floating texts (+1 ATK, -3 HP, -2 BASE...), particle bursts, bloom/vignette post-processing, idle bobbing/spinning markers.
+- HUD: top badges (name, animated HP bar, ATK, BASE) for both sides; **HISTORY panel** listing every event with colored names (player name "Bahadır", set on GameController); prompt line above the cards.
+- Responsive layout (`ScreenLayout`): portrait = history under the badges, cards in a bottom row; landscape = history on the left, cards in a right column. `CameraFit` measures these panels and fits the board into the free area.
+- 40 PlayMode tests pass.
 
 **Not done yet**
-- Difficulty levels (only "standard" AI), sound, real art/models, saving, event log/history (only the latest message is shown), Android device build, orientation lock.
+- Difficulty levels (only "standard" AI), sound, real 3D models, saving, Android device build, orientation lock.
 
 ## Known issues
 
-- Card draw and effect placement are uniform random (no deck/weights). Balance is untested — numbers live in `TileRules` and the GameController/BoardEffects Inspector.
-- Effect markers are small primitive placeholders; the RIVAL tile/castle colors are close to the rival hero's.
-- Cards briefly look faded when re-enabled (Button color-tint fade) — cosmetic.
+- Card art is generated on the title screen (~0.4 s per card in the Editor, spread over frames); faster on device with IL2CPP.
+- Long history lines wrap in the narrow landscape panel.
+- Card draw and effect placement are uniform random; balance untested (numbers in `TileRules` and the Inspector).
 
 ## Next steps
 
-1. User plays a few matches and gives feedback; merge PR #2 (cards) then the rival/effects PR.
-2. Ask the user for the idea list they wanted (difficulty levels, more tile types, abilities...).
-3. Swap placeholder prefabs for free CC0 models (e.g. Kenney, Quaternius) once the user downloads/approves them.
-4. Event log, damage popups, simple sounds.
+1. User plays and gives feedback; merge PRs #2 → #3 → visual-polish PR (they are stacked).
+2. Ask the user for their idea list (they want to hear suggestions: difficulty levels, new tile types, card abilities...).
+3. Sound effects, a short dice "clack", music.
+4. Replace primitive placeholders with free CC0 models (Kenney, Quaternius) if the user downloads/approves them.
 5. Lock orientation and do a first Android build.
 
 ## Important context
 
-- User is a Unity beginner: keep solutions simple and explain Editor steps. It's a personal hobby project (not published).
-- `Main.unity` and the effect prefabs in `Assets/_Project/Prefabs/Effects` are generated by `Assets/_Project/Scripts/Editor/PrototypeSceneBuilder.cs` (menu **Roll of Legends > Rebuild Prototype Scene**). Rebuilding overwrites manual edits to the scene **and those prefabs**.
-- Code map: `Fighter` (state of one side), `TileEffect`/`TileRules` (effects), `RivalAI` (card choice), `BoardEffects` (random placement + markers), `GameController` (turn flow, coroutines), `DiceCard`/`CardView` (hand), `DiceView` (die), `CameraFit` (framing between UI margins).
-- Pure rules (`Fighter`, `TileRules`, `RivalAI`, `Dice`, `DiceCard`) have no scene dependencies — test them directly.
-- Scene tests use `GameController.GiveCard` + `BoardEffects.SetEffect` to make moves deterministic, and `Time.timeScale = 6`.
-- Walking order = child order of `Board`; rival home = `TileCount / 2`. Tile numbers are world-space UI at each tile's front edge (don't use TextMesh — it draws through objects in URP); markers sit in the middle.
-- UI uses legacy `UnityEngine.UI.Text` (no TextMeshPro). If the UI layout changes, keep `CameraFit` top/bottom margins in sync.
+- User is a Unity beginner and speaks Turkish: keep solutions simple and explain Editor steps. Personal hobby project (not published).
+- `Main.unity`, the prefabs in `Assets/_Project/Prefabs/{Effects,Fx}` and `Assets/Settings/GameVolumeProfile.asset` are generated by `PrototypeSceneBuilder` (`.cs` = world, `.Ui.cs` = UI; menu **Roll of Legends > Rebuild Prototype Scene**). Rebuilding overwrites manual edits to them. Materials are reused if they exist (delete a `.mat` to get the builder's color back).
+- **No image files**: card faces (`CardArt`), the card glow and rounded UI panels (`UiSprites`, `RoundedImage`) are drawn in code with `Painter` (signed-distance shapes). Keep it that way unless the user provides art.
+- Code map: `Fighter` (one side's state), `TileEffect`/`TileRules`/`EffectResult` (effects), `RivalAI`, `BoardEffects` (random placement + markers), `GameController` (turn flow; `TapCard`/`PlayCard`), `DiceCard`/`CardView`, `DiceView`, `MoveHighlighter` (landing preview), `FxSpawner` (popups/bursts), `EventLog`, `FighterBadge`, `ScreenLayout`, `CameraFit`, `IdleMotion`, `FaceCamera`.
+- Pure rules (`Fighter`, `TileRules`, `RivalAI`, `Dice`, `DiceCard`) have no scene dependencies — test them directly. Scene tests use `GameController.GiveCard` + `BoardEffects.SetEffect` and tap cards twice (select, roll); `Time.timeScale = 6`.
+- Walking order = child order of `Board`; rival home = `TileCount / 2`. Tile numbers are world-space UI at each tile's front edge (don't use TextMesh — it draws through objects in URP).
+- UI uses legacy `UnityEngine.UI.Text` (no TextMeshPro). If you add a UI panel the board must avoid, add it to `ScreenLayout.Obstacles`.
 
 ## History
+
+### 2026-10-16 — Visual polish, move preview, match history
+- Themed card art drawn in code; select-then-roll with landing tile preview; bigger board/markers and closer camera; responsive portrait/landscape layout.
+- HISTORY panel with named, colored events; badges with HP bars; floating texts, particles, post-processing.
 
 ### 2026-10-16 — Rival AI + tile effects
 - Added an AI rival with its own base on the diagonal corner, HP/ATK/base HP, turn-based play.
