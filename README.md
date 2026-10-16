@@ -1,8 +1,8 @@
 # Roll of Legends
 
-Unity ile geliştirilen bir mobil oyun.
+Unity ile geliştirilen 3D bir mobil zar/board oyunu.
 
-> Oyun tasarımı ve detaylar yakında.
+> Şu an: oynanabilir ilk prototip — döngü şeklinde board, zarla ilerleyen kahraman. Güncel durum için [docs/DEV_LOG.md](docs/DEV_LOG.md).
 
 ## Gereksinimler
 
@@ -24,6 +24,11 @@ cd roll-of-legends
 
 Ardından Unity Hub → **Add project from disk** → bu klasörü seç.
 
+## Oynamak
+
+Unity'de **Project** penceresinden `Assets/_Project/Scenes/Main.unity` sahnesini aç ve üstteki ▶ **Play** butonuna bas.
+Testler: **Window → General → Test Runner → PlayMode → Run All**.
+
 ## Klasör yapısı
 
 ```
@@ -35,7 +40,8 @@ Assets/
     Prefabs/
     Scenes/
     ScriptableObjects/
-    Scripts/           # Runtime, Editor
+    Scripts/           # Runtime (oyun kodu), Editor (editör araçları)
+    Tests/             # PlayMode testleri
     UI/
   Settings/            # URP pipeline & renderer asset'leri
   ThirdParty/          # Asset Store / harici paketler
@@ -46,3 +52,4 @@ ProjectSettings/       # Proje ayarları (commit edilir)
 ## Geliştirme akışı
 
 Branch stratejisi, commit kuralları ve PR süreci için bkz. [CONTRIBUTING.md](CONTRIBUTING.md).
+AI kodlama ajanları için kurallar: [AGENTS.md](AGENTS.md).
